@@ -1,0 +1,45 @@
+## @file UefiBenchmark.inf
+## EDK II module definition for UefiBenchmark.
+## Build within an EDK II workspace:
+##   1. Copy this project into your workspace (e.g. UefiBenchmarkPkg/)
+##   2. Add UefiBenchmarkPkg/UefiBenchmark.inf to your platform .dsc
+##   3. build -p UefiBenchmarkPkg/UefiBenchmark.dsc -a X64
+
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = UefiBenchmark
+  FILE_GUID      = A3B7C9D1-E2F4-4A6B-8C0E-1D3F5A7B9C2E
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = EfiMain
+
+[Sources]
+  Source/Freestanding.cpp
+  Source/Timer.cpp
+  Source/SystemInfo.cpp
+  Source/BitmapFont.cpp
+  Source/Renderer.cpp
+  Source/BenchmarkRegistry.cpp
+  Source/BenchmarkRunner.cpp
+  Source/Tui.cpp
+  Source/Benchmarks/CpuBenchmark.cpp
+  Source/Benchmarks/MemoryBenchmark.cpp
+  Source/Benchmarks/PiBenchmark.cpp
+  Source/Main.cpp
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid
+  gEfiSimpleTextInProtocolGuid
+  gEfiMpServiceProtocolGuid
+
+[BuildOptions]
+  GCC:*_*_X64_CC_FLAGS   = -std=c++17 -fno-exceptions -fno-rtti -fno-stack-protector -IInclude -ISource
+  MSFT:*_*_X64_CC_FLAGS  = /std:c++17 /GR- /EHsc- /IInclude /ISource
