@@ -9,6 +9,12 @@ enum class ThreadingMode : int {
     Either     = 2
 };
 
+enum class RunMode : int {
+    SingleCore = 0,
+    MultiCore  = 1,
+    CoreCycle  = 2  // run on each core sequentially; produces per-core score table
+};
+
 enum class DurationClass : int {
     Short = 0,  // original five benchmarks (~seconds)
     Long  = 1   // new CPU/memory suite (~minutes)

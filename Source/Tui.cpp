@@ -166,29 +166,31 @@ void Tui::ShowMainMenu() {
                 case 0: { // Run All Short
                     IBenchmark** all  = BenchmarkRegistry::GetAll();
                     UINTN total       = BenchmarkRegistry::Count();
-                    UINTN indices[32]; bool mc[32]; UINTN cnt = 0;
+                    UINTN indices[32]; RunMode modes[32]; UINTN cnt = 0;
                     for (UINTN i = 0; i < total && cnt < 32; ++i) {
                         if (all[i]->GetDurationClass() == DurationClass::Short) {
                             indices[cnt] = i;
-                            mc[cnt] = (all[i]->GetThreadingMode() == ThreadingMode::MultiOnly);
+                            modes[cnt] = (all[i]->GetThreadingMode() == ThreadingMode::MultiOnly)
+                                         ? RunMode::MultiCore : RunMode::SingleCore;
                             ++cnt;
                         }
                     }
-                    if (cnt) ShowRunCountPicker(indices, mc, cnt);
+                    if (cnt) ShowRunCountPicker(indices, modes, cnt);
                     break;
                 }
                 case 1: { // Run All Long
                     IBenchmark** all  = BenchmarkRegistry::GetAll();
                     UINTN total       = BenchmarkRegistry::Count();
-                    UINTN indices[32]; bool mc[32]; UINTN cnt = 0;
+                    UINTN indices[32]; RunMode modes[32]; UINTN cnt = 0;
                     for (UINTN i = 0; i < total && cnt < 32; ++i) {
                         if (all[i]->GetDurationClass() == DurationClass::Long) {
                             indices[cnt] = i;
-                            mc[cnt] = (all[i]->GetThreadingMode() != ThreadingMode::SingleOnly);
+                            modes[cnt] = (all[i]->GetThreadingMode() != ThreadingMode::SingleOnly)
+                                         ? RunMode::MultiCore : RunMode::SingleCore;
                             ++cnt;
                         }
                     }
-                    if (cnt) ShowRunCountPicker(indices, mc, cnt);
+                    if (cnt) ShowRunCountPicker(indices, modes, cnt);
                     break;
                 }
                 case 2: ShowBenchmarkSelection(); break;
@@ -219,7 +221,7 @@ void Tui::ShowBenchmarkSelection() {
 
     IBenchmark** all = BenchmarkRegistry::GetAll();
     bool selected[32] = {};
-    bool multiCore[32] = {};
+    RunMode modes[32] = {};
     int cursor = 0;
 
     Renderer::FlushInput();
@@ -233,7 +235,7 @@ void Tui::ShowBenchmarkSelection() {
 
     for (UINTN i = 0; i < bmCount; ++i) {
         ThreadingMode tm = all[i]->GetThreadingMode();
-        multiCore[i] = (tm == ThreadingMode::MultiOnly);
+        modes[i] = (tm == ThreadingMode::MultiOnly) ? RunMode::MultiCore : RunMode::SingleCore;
     }
 
     while (true) {
@@ -286,14 +288,16 @@ void Tui::ShowBenchmarkSelection() {
             const char* modeStr;
             if (!mpAvail || tm == ThreadingMode::SingleOnly)
                 modeStr = "Single";
-            else if (tm == ThreadingMode::MultiOnly)
-                modeStr = "Multi";
+            else if (modes[i] == RunMode::CoreCycle)
+                modeStr = "Cycle ";
+            else if (modes[i] == RunMode::MultiCore)
+                modeStr = "Multi ";
             else
-                modeStr = multiCore[i] ? "Multi" : "Single";
+                modeStr = "Single";
 
             for (int j = 0; modeStr[j] && p < 64; ++j) label[p++] = modeStr[j];
 
-            if (tm == ThreadingMode::Either && mpAvail) {
+            if (mpAvail && tm != ThreadingMode::SingleOnly) {
                 for (const char* s = " \x11\x10"; *s && p < 80; ++s) label[p++] = *s;
             }
             label[p] = '\0';
@@ -319,24 +323,45 @@ void Tui::ShowBenchmarkSelection() {
             selected[cursor] = !selected[cursor];
         else if (key.ScanCode == SCAN_LEFT || key.ScanCode == SCAN_RIGHT) {
             ThreadingMode tm = all[cursor]->GetThreadingMode();
-            if (mpAvail && tm == ThreadingMode::Either)
-                multiCore[cursor] = !multiCore[cursor];
+            if (mpAvail && tm != ThreadingMode::SingleOnly) {
+                // Cycle: Single → Multi → Cycle → Single (Either)
+                //        Multi  → Cycle → Multi         (MultiOnly)
+                if (key.ScanCode == SCAN_RIGHT) {
+                    if (tm == ThreadingMode::MultiOnly) {
+                        modes[cursor] = (modes[cursor] == RunMode::MultiCore)
+                                        ? RunMode::CoreCycle : RunMode::MultiCore;
+                    } else {
+                        if      (modes[cursor] == RunMode::SingleCore) modes[cursor] = RunMode::MultiCore;
+                        else if (modes[cursor] == RunMode::MultiCore)  modes[cursor] = RunMode::CoreCycle;
+                        else                                            modes[cursor] = RunMode::SingleCore;
+                    }
+                } else { // SCAN_LEFT
+                    if (tm == ThreadingMode::MultiOnly) {
+                        modes[cursor] = (modes[cursor] == RunMode::MultiCore)
+                                        ? RunMode::CoreCycle : RunMode::MultiCore;
+                    } else {
+                        if      (modes[cursor] == RunMode::SingleCore) modes[cursor] = RunMode::CoreCycle;
+                        else if (modes[cursor] == RunMode::CoreCycle)  modes[cursor] = RunMode::MultiCore;
+                        else                                            modes[cursor] = RunMode::SingleCore;
+                    }
+                }
+            }
         }
         else if (key.ScanCode == SCAN_ESC)
             return;
         else if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') {
             UINTN indices[32];
-            bool mc[32];
+            RunMode selModes[32];
             UINTN count = 0;
             for (UINTN i = 0; i < bmCount; ++i) {
                 if (selected[i]) {
-                    indices[count] = i;
-                    mc[count] = multiCore[i];
+                    indices[count]  = i;
+                    selModes[count] = modes[i];
                     ++count;
                 }
             }
             if (count > 0)
-                ShowRunCountPicker(indices, mc, count);
+                ShowRunCountPicker(indices, selModes, count);
             return;
         }
     }
@@ -344,33 +369,88 @@ void Tui::ShowBenchmarkSelection() {
 
 // ── Run Count Picker ─────────────────────────────────────────
 
-void Tui::ShowRunCountPicker(const UINTN* indices, const bool* multiCore,
+void Tui::ShowRunCountPicker(const UINTN* indices, const RunMode* modes,
                              UINTN count) {
-    int runs = 1; // default 1 for long benchmarks
+    int runs = 1;
+    bool coreCycleAllCores = true;  // default: cycle all APs
+
+    // Determine whether any selected benchmark is CoreCycle
+    bool hasCoreCycle = false;
+    for (UINTN i = 0; i < count; ++i)
+        if (modes[i] == RunMode::CoreCycle) { hasCoreCycle = true; break; }
+
+    // cursor: 0 = Runs row, 1 = Scope row (only when hasCoreCycle)
+    int pickerCursor = 0;
+    const int pickerRows = hasCoreCycle ? 2 : 1;
 
     Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("Set Run Count");
         row++;
-        Renderer::DrawText(2, row, "How many times to run each benchmark?", Theme::Current().TextDim);
+
+        const char* prompt = hasCoreCycle
+            ? "How many times to run on each core?"
+            : "How many times to run each benchmark?";
+        Renderer::DrawText(2, row, prompt, Theme::Current().TextDim);
         row += 2;
 
-        Renderer::DrawText(2, row, "Runs: ", Theme::Current().Text);
-        Renderer::DrawText(8, row, UintToStr(static_cast<UINT64>(runs)), Theme::Current().Accent);
-        row += 2;
+        // Runs row
+        bool runsHi = (pickerCursor == 0);
+        {
+            char line[64];
+            int p = 0;
+            line[p++] = runsHi ? '>' : ' '; line[p++] = ' ';
+            for (const char* s = "Runs:  "; *s; ++s) line[p++] = *s;
+            const char* ns = UintToStr(static_cast<UINT64>(runs));
+            for (int j = 0; ns[j]; ++j) line[p++] = ns[j];
+            line[p] = '\0';
+            Renderer::DrawText(2, row, line,
+                runsHi ? Theme::Current().Accent : Theme::Current().Text);
+        }
+        row++;
 
-        Renderer::DrawText(2, row, "[Left/Right] Adjust  [Enter] Start  [Esc] Cancel", Theme::Current().TextDim);
+        // Core scope row (CoreCycle only)
+        if (hasCoreCycle) {
+            row++;
+            bool scopeHi = (pickerCursor == 1);
+            char line[80];
+            int p = 0;
+            line[p++] = scopeHi ? '>' : ' '; line[p++] = ' ';
+            for (const char* s = "Core scope:  "; *s; ++s) line[p++] = *s;
+            const char* sv = coreCycleAllCores ? "[All Cores]" : "[Selected]";
+            for (int j = 0; sv[j]; ++j) line[p++] = sv[j];
+            line[p] = '\0';
+            Renderer::DrawText(2, row, line,
+                scopeHi ? Theme::Current().Accent : Theme::Current().Text);
+            row++;
+        }
+
+        row++;
+        Renderer::DrawText(2, row,
+            "[Up/Dn] Field  [Left/Right] Adjust  [Enter] Start  [Esc] Cancel",
+            Theme::Current().TextDim);
 
         DrawFooter(Concat3("Running ", UintToStr(count), " benchmark(s)"));
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
-        if (key.ScanCode == SCAN_LEFT && runs > 1) --runs;
-        else if (key.ScanCode == SCAN_RIGHT && runs < 10) ++runs;
-        else if (key.ScanCode == SCAN_ESC) return;
-        else if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') {
-            RunBenchmarks(indices, multiCore, count, static_cast<UINTN>(runs));
+        if (key.ScanCode == SCAN_UP)
+            pickerCursor = (pickerCursor - 1 + pickerRows) % pickerRows;
+        else if (key.ScanCode == SCAN_DOWN)
+            pickerCursor = (pickerCursor + 1) % pickerRows;
+        else if (key.ScanCode == SCAN_LEFT || key.ScanCode == SCAN_RIGHT) {
+            if (pickerCursor == 0) {
+                if (key.ScanCode == SCAN_LEFT  && runs > 1)  --runs;
+                if (key.ScanCode == SCAN_RIGHT && runs < 10) ++runs;
+            } else {
+                coreCycleAllCores = !coreCycleAllCores;
+            }
+        } else if (key.ScanCode == SCAN_ESC) {
+            return;
+        } else if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') {
+            RunBenchmarks(indices, modes, count, static_cast<UINTN>(runs),
+                          coreCycleAllCores);
             return;
         }
     }
@@ -378,9 +458,10 @@ void Tui::ShowRunCountPicker(const UINTN* indices, const bool* multiCore,
 
 // ── Run Benchmarks ───────────────────────────────────────────
 
-void Tui::RunBenchmarks(const UINTN* indices, const bool* multiCore,
-                        UINTN count, UINTN runs) {
-    mLastResults = BenchmarkRunner::RunSelected(indices, multiCore, count, runs);
+void Tui::RunBenchmarks(const UINTN* indices, const RunMode* modes,
+                        UINTN count, UINTN runs, bool coreCycleAllCores) {
+    mLastResults = BenchmarkRunner::RunSelected(indices, modes, count, runs,
+                                                coreCycleAllCores);
     ShowResults();
 }
 
@@ -397,8 +478,22 @@ void Tui::ShowResults() {
         return;
     }
 
+    // Build flat display list: each entry is (resultIdx, coreIdx)
+    // coreIdx == -1 → summary row; coreIdx >= 0 → per-core sub-row
+    struct DisplayRow { int resIdx; int coreIdx; };
+    static DisplayRow flat[32 + 32 * MAX_CYCLE_CORES];
+    int flatCount = 0;
+    for (int ri = 0; ri < static_cast<int>(mLastResults.Size()); ++ri) {
+        flat[flatCount++] = { ri, -1 };
+        auto& r = mLastResults[static_cast<UINTN>(ri)];
+        if (r.RunModeUsed == RunMode::CoreCycle) {
+            for (UINT32 c = 0; c < r.PerCoreSampleCount && flatCount < 32 + 32 * (int)MAX_CYCLE_CORES; ++c)
+                flat[flatCount++] = { ri, static_cast<int>(c) };
+        }
+    }
+
     int scroll = 0;
-    int resultCount = static_cast<int>(mLastResults.Size());
+    int resultCount = flatCount;
 
     Renderer::FlushInput();
     while (true) {
@@ -420,41 +515,113 @@ void Tui::ShowResults() {
 
         int viewRows = static_cast<int>(Renderer::Rows()) - row - 8;
         for (int i = 0; i < viewRows && (scroll + i) < resultCount; ++i) {
-            auto& r = mLastResults[static_cast<UINTN>(scroll + i)];
+            auto& dr = flat[scroll + i];
+            auto& r  = mLastResults[static_cast<UINTN>(dr.resIdx)];
 
-            Renderer::DrawText(2,  row, Renderer::Pad(r.Name, 22),     Theme::Current().Text);
-            Renderer::DrawText(24, row, Renderer::Pad(r.Category, 6),  Theme::Current().Accent);
+            if (dr.coreIdx < 0) {
+                // ── Summary row ──
+                Renderer::DrawText(2,  row, Renderer::Pad(r.Name, 22),     Theme::Current().Text);
+                Renderer::DrawText(24, row, Renderer::Pad(r.Category, 6),  Theme::Current().Accent);
 
-            char coreStr[16];
-            if (r.MultiCore) {
-                const char* n = UintToStr(r.CoreCount);
-                int p = 0;
-                for (int j = 0; n[j] && p < 10; ++j) coreStr[p++] = n[j];
-                coreStr[p++] = 'x'; coreStr[p] = '\0';
+                char coreStr[16];
+                if (r.RunModeUsed == RunMode::CoreCycle) {
+                    // "CC8" style label
+                    int p = 0;
+                    coreStr[p++] = 'C'; coreStr[p++] = 'C';
+                    const char* n = UintToStr(r.CoreCount);
+                    for (int j = 0; n[j] && p < 14; ++j) coreStr[p++] = n[j];
+                    coreStr[p] = '\0';
+                } else if (r.MultiCore) {
+                    const char* n = UintToStr(r.CoreCount);
+                    int p = 0;
+                    for (int j = 0; n[j] && p < 10; ++j) coreStr[p++] = n[j];
+                    coreStr[p++] = 'x'; coreStr[p] = '\0';
+                } else {
+                    coreStr[0] = '1'; coreStr[1] = '\0';
+                }
+                Renderer::DrawText(30, row, Renderer::Pad(coreStr, 7),
+                    (r.RunModeUsed == RunMode::CoreCycle || r.MultiCore)
+                        ? Theme::Current().Warning : Theme::Current().TextDim);
+
+                UINT64 avg = Stats::GetAverage(r.RunTimesUs);
+                UINT64 mn  = Stats::GetMin(r.RunTimesUs);
+                UINT64 mx  = Stats::GetMax(r.RunTimesUs);
+
+                Renderer::DrawText(37, row, Renderer::Pad(UintToStr(avg), 12), Theme::Current().Success);
+                Renderer::DrawText(49, row, Renderer::Pad(UintToStr(mn),  12), Theme::Current().TextDim);
+                Renderer::DrawText(61, row, Renderer::Pad(UintToStr(mx),  12), Theme::Current().TextDim);
+
+                if (r.Score > 0) {
+                    Renderer::DrawText(73, row, Renderer::Pad(UintToStr(r.Score), 11), Theme::Current().Accent);
+                    Renderer::DrawText(84, row, Renderer::Pad(r.Unit,             9),  Theme::Current().TextDim);
+                } else {
+                    Renderer::DrawText(73, row, Renderer::Pad("---", 11), Theme::Current().TextDim);
+                }
+
+                if (r.ErrorCount > 0)
+                    Renderer::DrawText(93, row, "ERR", Theme::Current().Error);
+
             } else {
-                coreStr[0] = '1'; coreStr[1] = '\0';
-            }
-            Renderer::DrawText(30, row, Renderer::Pad(coreStr, 7),
-                               r.MultiCore ? Theme::Current().Warning : Theme::Current().TextDim);
+                // ── Per-core sub-row ──
+                int c = dr.coreIdx;
 
-            UINT64 avg = Stats::GetAverage(r.RunTimesUs);
-            UINT64 mn  = Stats::GetMin(r.RunTimesUs);
-            UINT64 mx  = Stats::GetMax(r.RunTimesUs);
+                // Look up package/core/thread from CoreSelection roster
+                char label[32];
+                label[0] = '\0';
+                {
+                    CoreSelection::ApInfo* roster = CoreSelection::GetAll();
+                    UINT32 total = CoreSelection::Count();
+                    UINT32 apIdx = r.PerCoreApIndex[static_cast<UINT32>(c)];
+                    int p = 0;
+                    label[p++] = ' '; label[p++] = ' ';
+                    label[p++] = '+'; label[p++] = '-';
+                    label[p++] = 'A'; label[p++] = 'P';
+                    const char* as = UintToStr(apIdx);
+                    for (int j = 0; as[j] && p < 8; ++j) label[p++] = as[j];
+                    for (UINT32 ri2 = 0; ri2 < total; ++ri2) {
+                        if (roster[ri2].ProcIndex == apIdx) {
+                            label[p++] = ' ';
+                            label[p++] = 'P'; label[p++] = '0'; label[p++] = '+';
+                            label[p++] = 'C';
+                            const char* cs2 = UintToStr(roster[ri2].Core);
+                            for (int j = 0; cs2[j] && p < 28; ++j) label[p++] = cs2[j];
+                            label[p++] = 'T';
+                            const char* ts = UintToStr(roster[ri2].Thread);
+                            for (int j = 0; ts[j] && p < 30; ++j) label[p++] = ts[j];
+                            break;
+                        }
+                    }
+                    label[p] = '\0';
+                }
 
-            Renderer::DrawText(37, row, Renderer::Pad(UintToStr(avg), 12), Theme::Current().Success);
-            Renderer::DrawText(49, row, Renderer::Pad(UintToStr(mn),  12), Theme::Current().TextDim);
-            Renderer::DrawText(61, row, Renderer::Pad(UintToStr(mx),  12), Theme::Current().TextDim);
+                // Detect outlier: >5% deviation from median (aggregate score)
+                bool outlier = false;
+                if (r.Score > 0) {
+                    UINT64 sc = r.PerCoreScore[static_cast<UINT32>(c)];
+                    UINT64 dev = (sc > r.Score) ? sc - r.Score : r.Score - sc;
+                    outlier = (dev * 100 / r.Score) > 5;
+                }
 
-            if (r.Score > 0) {
-                Renderer::DrawText(73, row, Renderer::Pad(UintToStr(r.Score), 11), Theme::Current().Accent);
-                Renderer::DrawText(84, row, Renderer::Pad(r.Unit,             9),  Theme::Current().TextDim);
-            } else {
-                Renderer::DrawText(73, row, Renderer::Pad("---", 11), Theme::Current().TextDim);
-            }
+                Color nameCol = outlier ? Theme::Current().Warning : Theme::Current().TextDim;
+                Renderer::DrawText(2, row, Renderer::Pad(label, 22), nameCol);
 
-            // Error count indicator for integrity test
-            if (r.ErrorCount > 0) {
-                Renderer::DrawText(93, row, "ERR", Theme::Current().Error);
+                // Score columns: min / avg / max score for this core (if available),
+                // otherwise fall back to showing the per-core elapsed time.
+                UINT64 sc  = r.PerCoreScore[static_cast<UINT32>(c)];
+                UINT64 mn  = r.PerCoreMin[static_cast<UINT32>(c)];
+                UINT64 mx  = r.PerCoreMax[static_cast<UINT32>(c)];
+                bool hasScore = (sc > 0 || mn > 0 || mx > 0);
+                if (hasScore) {
+                    Renderer::DrawText(73, row, Renderer::Pad(UintToStr(sc), 11),
+                                       outlier ? Theme::Current().Warning : Theme::Current().Accent);
+                    Renderer::DrawText(49, row, Renderer::Pad(UintToStr(mn), 12), Theme::Current().TextDim);
+                    Renderer::DrawText(61, row, Renderer::Pad(UintToStr(mx), 12), Theme::Current().TextDim);
+                    Renderer::DrawText(84, row, Renderer::Pad(r.Unit, 9), Theme::Current().TextDim);
+                } else {
+                    UINT64 t = r.PerCoreTimeUs[static_cast<UINT32>(c)];
+                    Renderer::DrawText(37, row, Renderer::Pad(UintToStr(t), 12), Theme::Current().Success);
+                    Renderer::DrawText(84, row, Renderer::Pad("us", 9), Theme::Current().TextDim);
+                }
             }
 
             row++;

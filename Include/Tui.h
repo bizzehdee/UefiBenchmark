@@ -13,9 +13,9 @@ public:
 private:
     void ShowMainMenu();
     void ShowBenchmarkSelection();
-    void ShowRunCountPicker(const UINTN* indices, const bool* multiCore, UINTN count);
-    void RunBenchmarks(const UINTN* indices, const bool* multiCore,
-                       UINTN count, UINTN runs);
+    void ShowRunCountPicker(const UINTN* indices, const RunMode* modes, UINTN count);
+    void RunBenchmarks(const UINTN* indices, const RunMode* modes,
+                       UINTN count, UINTN runs, bool coreCycleAllCores);
     void ShowResults();
     void ShowSystemInfo();
     void ShowResolutionPicker();
