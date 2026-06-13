@@ -15,13 +15,50 @@ A freestanding C++ UEFI application that benchmarks CPU and memory performance d
 
 ## Included Benchmarks
 
-| Benchmark | Category | Description |
-|-----------|----------|-------------|
-| Integer Arithmetic | CPU | Add/mul/div/xor dependency chain (5M iterations) |
-| Pi (Scalar) | CPU | Leibniz series, 100M terms, scalar double (no SIMD) |
-| Pi (SIMD/SSE2) | CPU | Leibniz series, 100M terms, SSE2 packed doubles (2 per cycle) |
-| Memory Sequential | Memory | Sequential R/W over 32 MB page-aligned buffer |
-| Memory Random | Memory | 1M random 4-byte reads over 32 MB buffer (pre-computed indices) |
+### CPU Benchmarks
+
+| Benchmark | Description | Score Metric | Duration |
+|-----------|-------------|--------------|----------|
+| Integer Arithmetic | Add/Mul/Div/XOR throughput with dependency chain | MOPS | Fixed iterations |
+| Int Latency (Serial) | Single-core serial dependency chain (stresses core latency) | MOPS | Fixed iterations |
+| Int Throughput (ILP) | 8 independent 64-bit add/shift/and/xor chains (fills ALU ports) | MOPS | 180s time-boxed |
+| Pi (Scalar) | Leibniz series, 100M terms, scalar double (no SIMD) | MFLOP/s | Fixed iterations |
+| Pi (SIMD/SSE2) | Leibniz series, 100M terms, SSE2 packed doubles (2 per cycle) | GFLOP/s | Fixed iterations |
+| FP Scalar + Divide | Mixed scalar add/mul/div on doubles (stresses FP divider) | MFLOP/s | 180s time-boxed |
+| FP Vector (AVX2/FMA) | AVX2 FMA operations on packed doubles | GFLOP/s | 180s time-boxed |
+| AES-NI Encryption | AES-128 round chaining via `_mm_aesenc` (measures AES unit throughput) | MB/s | 180s time-boxed |
+| Hash / CRC32 | CRC32 hashing via `_mm_crc32_u64` over cache-resident block | MB/s | 150s time-boxed |
+| Branch Prediction | Data-dependent branches on random bytes (stresses branch predictor) | Mbranch/s | 150s time-boxed |
+| Mandelbrot (FP+Branch) | Escape-time per-pixel FP loop (mixes FP units with branch predictor) | Miter/s | 180s time-boxed |
+
+### Memory Benchmarks
+
+| Benchmark | Description | Score Metric | Duration |
+|-----------|-------------|--------------|----------|
+| Mem Sequential Read | Sequential reads across whole RAM | MB/s | Multi-pass |
+| Mem Sequential Write | Non-temporal stream stores across whole RAM | MB/s | Multi-pass |
+| Memory Random | Random 4-byte reads over 32 MB buffer (pre-computed indices) | MB/s | Fixed iterations |
+| Mem Random Latency | Pointer-chase across all RAM (measures full-DRAM random latency) | ns/access | Single-core |
+| Mem Integrity (March) | Write+verify 0x00/0xFF/0xAA/0x55 patterns over all RAM | MB/s verified + Error count | Multi-core |
+
+## Benchmark Score Criteria
+
+- **MOPS** (Million OPerations/Second) — higher is better; integer throughput or latency-bound chains
+- **GFLOP/s** (GigaFLOPs/Second) — higher is better; vector floating-point throughput
+- **MFLOP/s** (MegaFLOPs/Second) — higher is better; scalar floating-point throughput  
+- **MB/s** (MegaBytes/Second) — higher is better; memory or encryption throughput
+- **Mbranch/s** (Million branches/Second) — higher is better; branch throughput
+- **Miter/s** (Million iterations/Second) — higher is better; algorithm-dependent iterations
+- **ns/access** (nanoseconds/access) — lower is better; memory latency
+- **Error count** — lower is better; memory integrity errors detected
+
+### Benchmark Modes
+
+- **Time-boxed** — runs for a fixed duration (150–180 seconds) and counts total iterations; score = iterations / time
+- **Fixed iterations** — runs for a fixed iteration count and reports timing
+- **Multi-pass** — iterates until convergence or a fixed number of passes over RAM
+- **Single-core** — runs on primary processor only (no multi-threading)
+- **Multi-core** — dispatches to all available processor cores via UEFI MP Services Protocol
 
 ## Building
 
@@ -190,9 +227,7 @@ Source/
   BenchmarkRunner.cpp   Run engine with progress display
   Tui.cpp               Full TUI: main menu, selection, run picker, results, sysinfo
   Benchmarks/
-    CpuBenchmark.h/.cpp      Integer arithmetic with dependency chain
-    MemoryBenchmark.h/.cpp    Sequential + random memory access (32 MB, page-aligned)
-    PiBenchmark.h/.cpp        Pi via Leibniz series — scalar vs SSE2 SIMD
+    *.h / *.cpp         CPU and memory benchmarks (see Included Benchmarks section)
 
 UefiBenchmark.inf     EDK II module definition
 UefiBenchmark.dsc     EDK II platform descriptor
@@ -201,7 +236,6 @@ Makefile              MinGW cross-compiler build + QEMU test target
 
 ## Design Notes
 
-- **No STL** — `Vector<T>` is POD-only, backed by UEFI `AllocatePool`
 - **No exceptions / no RTTI** — compiled with `-fno-exceptions -fno-rtti`
 - **Multi-core via MP Services** — blocking `StartupAllAPs` dispatches to all APs; BSP orchestrates only (portable across firmware); atomic worker index for compact 0-based per-core IDs
 - **Memory benchmark partitioning** — in multi-core mode, each AP gets a cache-line-aligned slice of the buffer (no false sharing)

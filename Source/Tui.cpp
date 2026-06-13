@@ -35,7 +35,6 @@ static const char* Concat3(const char* a, const char* b, const char* c) {
 int Tui::DrawHeader(const char* title, int startRow) {
     int cols = static_cast<int>(Renderer::Columns());
 
-    // Top border
     char border[128];
     int bLen = cols < 127 ? cols : 127;
     for (int i = 0; i < bLen; ++i) border[i] = '=';
@@ -43,7 +42,6 @@ int Tui::DrawHeader(const char* title, int startRow) {
 
     Renderer::DrawText(0, startRow, border, Theme::HeaderBorder);
 
-    // Centred title
     int pad = (cols - static_cast<int>(StrLen(title))) / 2;
     char line[128];
     int p = 0;
@@ -72,12 +70,10 @@ void Tui::DrawMenuItem(int row, const char* text, bool highlighted,
     char line[128];
     int p = 0;
 
-    // Prefix
     line[p++] = ' '; line[p++] = ' ';
     line[p++] = highlighted ? '>' : ' ';
     line[p++] = ' ';
 
-    // Checkbox
     if (showCheckbox) {
         line[p++] = '[';
         line[p++] = isChecked ? 'X' : ' ';
@@ -85,10 +81,8 @@ void Tui::DrawMenuItem(int row, const char* text, bool highlighted,
         line[p++] = ' ';
     }
 
-    // Text
     if (text) for (int i = 0; text[i] && p < 126; ++i) line[p++] = text[i];
 
-    // Pad to full width
     int cols = static_cast<int>(Renderer::Columns());
     while (p < cols && p < 127) line[p++] = ' ';
     line[p] = '\0';
@@ -101,8 +95,12 @@ void Tui::DrawMenuItem(int row, const char* text, bool highlighted,
 
 void Tui::DrawFooter(const char* text) {
     int rows = static_cast<int>(Renderer::Rows());
-    DrawSeparator(rows - 2);
-    Renderer::DrawTextBg(0, rows - 1, Renderer::Pad(text, static_cast<int>(Renderer::Columns())),
+    int cols = static_cast<int>(Renderer::Columns());
+    DrawSeparator(rows - 3);
+    Renderer::DrawTextBg(0, rows - 2,
+        Renderer::Pad("(c) 2026 Darren Horrocks | https://github.com/bizzehdee/UefiBenchmark | MIT License", cols),
+        Theme::TextDim, Theme::Background);
+    Renderer::DrawTextBg(0, rows - 1, Renderer::Pad(text, cols),
                          Theme::Footer, Theme::Background);
 }
 
@@ -131,13 +129,14 @@ void Tui::Run() {
 
 void Tui::ShowMainMenu() {
     const char* options[] = {
-        "Run All Benchmarks",
+        "Run All Short Benchmarks",
+        "Run All Long Benchmarks",
         "Select Benchmarks",
         "View Last Results",
         "System Info",
         "Shutdown"
     };
-    constexpr int OPT_COUNT = 5;
+    constexpr int OPT_COUNT = 6;
     int cursor = 0;
 
     while (true) {
@@ -161,22 +160,38 @@ void Tui::ShowMainMenu() {
             cursor = (cursor + 1) % OPT_COUNT;
         else if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') {
             switch (cursor) {
-                case 0: {
-                    // Run All — default single-core
-                    UINTN count = BenchmarkRegistry::Count();
-                    UINTN indices[32];
-                    bool multiCore[32];
-                    for (UINTN i = 0; i < count && i < 32; ++i) {
-                        indices[i] = i;
-                        multiCore[i] = false;
+                case 0: { // Run All Short
+                    IBenchmark** all  = BenchmarkRegistry::GetAll();
+                    UINTN total       = BenchmarkRegistry::Count();
+                    UINTN indices[32]; bool mc[32]; UINTN cnt = 0;
+                    for (UINTN i = 0; i < total && cnt < 32; ++i) {
+                        if (all[i]->GetDurationClass() == DurationClass::Short) {
+                            indices[cnt] = i;
+                            mc[cnt] = (all[i]->GetThreadingMode() == ThreadingMode::MultiOnly);
+                            ++cnt;
+                        }
                     }
-                    ShowRunCountPicker(indices, multiCore, count);
+                    if (cnt) ShowRunCountPicker(indices, mc, cnt);
                     break;
                 }
-                case 1: ShowBenchmarkSelection(); break;
-                case 2: ShowResults(); break;
-                case 3: ShowSystemInfo(); break;
-                case 4: return; // exit to UEFI shell
+                case 1: { // Run All Long
+                    IBenchmark** all  = BenchmarkRegistry::GetAll();
+                    UINTN total       = BenchmarkRegistry::Count();
+                    UINTN indices[32]; bool mc[32]; UINTN cnt = 0;
+                    for (UINTN i = 0; i < total && cnt < 32; ++i) {
+                        if (all[i]->GetDurationClass() == DurationClass::Long) {
+                            indices[cnt] = i;
+                            mc[cnt] = (all[i]->GetThreadingMode() != ThreadingMode::SingleOnly);
+                            ++cnt;
+                        }
+                    }
+                    if (cnt) ShowRunCountPicker(indices, mc, cnt);
+                    break;
+                }
+                case 2: ShowBenchmarkSelection(); break;
+                case 3: ShowResults();            break;
+                case 4: ShowSystemInfo();         break;
+                case 5: return;
             }
         }
     }
@@ -209,13 +224,9 @@ void Tui::ShowBenchmarkSelection() {
         if (apCount == 0) mpAvail = false;
     }
 
-    // Initialise default threading mode per benchmark
     for (UINTN i = 0; i < bmCount; ++i) {
         ThreadingMode tm = all[i]->GetThreadingMode();
-        if (tm == ThreadingMode::MultiOnly)
-            multiCore[i] = true;
-        else
-            multiCore[i] = false;
+        multiCore[i] = (tm == ThreadingMode::MultiOnly);
     }
 
     while (true) {
@@ -237,24 +248,34 @@ void Tui::ShowBenchmarkSelection() {
         row += 2;
 
         int menuStart = row;
-        for (UINTN i = 0; i < bmCount; ++i) {
-            ThreadingMode tm = all[i]->GetThreadingMode();
 
-            // Build label: "Name  [Category]    Mode"
+        // Emit grouped list with section headers
+        DurationClass lastDc = DurationClass::Long; // force header on first item
+        int vRow = menuStart;
+        for (UINTN i = 0; i < bmCount; ++i) {
+            DurationClass dc = all[i]->GetDurationClass();
+            if (dc != lastDc || i == 0) {
+                // Section header row
+                const char* hdr = (dc == DurationClass::Short)
+                    ? "  -- Short running --"
+                    : "  -- Long running --";
+                Renderer::DrawText(0, vRow, hdr, Theme::TextDim);
+                ++vRow;
+                lastDc = dc;
+            }
+
+            ThreadingMode tm = all[i]->GetThreadingMode();
             const char* name = all[i]->GetName();
             const char* cat  = all[i]->GetCategory();
             char label[128];
             int p = 0;
-            for (int j = 0; name[j] && p < 40; ++j) label[p++] = name[j];
-            // Pad name to column 42
-            while (p < 42) label[p++] = ' ';
+            for (int j = 0; name[j] && p < 36; ++j) label[p++] = name[j];
+            while (p < 38) label[p++] = ' ';
             label[p++] = '[';
-            for (int j = 0; cat[j] && p < 52; ++j) label[p++] = cat[j];
+            for (int j = 0; cat[j] && p < 48; ++j) label[p++] = cat[j];
             label[p++] = ']';
-            // Pad to column 56
-            while (p < 56) label[p++] = ' ';
+            while (p < 52) label[p++] = ' ';
 
-            // Mode indicator
             const char* modeStr;
             if (!mpAvail || tm == ThreadingMode::SingleOnly)
                 modeStr = "Single";
@@ -263,26 +284,21 @@ void Tui::ShowBenchmarkSelection() {
             else
                 modeStr = multiCore[i] ? "Multi" : "Single";
 
-            for (int j = 0; modeStr[j] && p < 70; ++j) label[p++] = modeStr[j];
+            for (int j = 0; modeStr[j] && p < 64; ++j) label[p++] = modeStr[j];
 
-            // Show lock indicator for mandatory modes
-            if (tm == ThreadingMode::SingleOnly || tm == ThreadingMode::MultiOnly ||
-                !mpAvail) {
-                // no toggle indicator
-            } else {
-                // Show toggle arrows
+            if (tm == ThreadingMode::Either && mpAvail) {
                 for (const char* s = " \x11\x10"; *s && p < 80; ++s) label[p++] = *s;
             }
-
             label[p] = '\0';
 
-            DrawMenuItem(menuStart + static_cast<int>(i), label,
-                         static_cast<int>(i) == cursor, true, selected[i]);
+            DrawMenuItem(vRow, label, static_cast<int>(i) == cursor, true, selected[i]);
+            ++vRow;
         }
 
-        row = menuStart + static_cast<int>(bmCount) + 1;
-        row = DrawSeparator(row);
-        Renderer::DrawText(2, row, all[cursor]->GetDescription(), Theme::TextDim);
+        // Description of current item
+        int descRow = vRow + 1;
+        DrawSeparator(descRow - 1);
+        Renderer::DrawText(2, descRow, all[cursor]->GetDescription(), Theme::TextDim);
 
         DrawFooter("[Up/Dn] Move [Space] Toggle [L/R] Mode [Enter] Run [Esc] Back");
         Renderer::Present();
@@ -295,7 +311,6 @@ void Tui::ShowBenchmarkSelection() {
         else if (key.UnicodeChar == ' ')
             selected[cursor] = !selected[cursor];
         else if (key.ScanCode == SCAN_LEFT || key.ScanCode == SCAN_RIGHT) {
-            // Toggle threading mode (only for "Either" benchmarks with MP available)
             ThreadingMode tm = all[cursor]->GetThreadingMode();
             if (mpAvail && tm == ThreadingMode::Either)
                 multiCore[cursor] = !multiCore[cursor];
@@ -324,7 +339,7 @@ void Tui::ShowBenchmarkSelection() {
 
 void Tui::ShowRunCountPicker(const UINTN* indices, const bool* multiCore,
                              UINTN count) {
-    int runs = 3; // default
+    int runs = 1; // default 1 for long benchmarks
 
     while (true) {
         Renderer::Clear();
@@ -382,33 +397,31 @@ void Tui::ShowResults() {
         int row = DrawHeader("Benchmark Results");
         row++;
 
-        // Column headers
-        Renderer::DrawText(2,  row, Renderer::Pad("Benchmark", 22), Theme::Accent);
-        Renderer::DrawText(24, row, Renderer::Pad("Cat", 6), Theme::Accent);
-        Renderer::DrawText(30, row, Renderer::Pad("Cores", 7), Theme::Accent);
-        Renderer::DrawText(37, row, Renderer::Pad("Avg(us)", 12), Theme::Accent);
-        Renderer::DrawText(49, row, Renderer::Pad("Min(us)", 12), Theme::Accent);
-        Renderer::DrawText(61, row, Renderer::Pad("Max(us)", 12), Theme::Accent);
-        Renderer::DrawText(73, row, Renderer::Pad("Runs", 6), Theme::Accent);
+        // Column headers — grid is 100 cols
+        Renderer::DrawText(2,  row, Renderer::Pad("Benchmark", 22),   Theme::Accent);
+        Renderer::DrawText(24, row, Renderer::Pad("Cat", 6),           Theme::Accent);
+        Renderer::DrawText(30, row, Renderer::Pad("Cores", 7),         Theme::Accent);
+        Renderer::DrawText(37, row, Renderer::Pad("Avg(us)", 12),      Theme::Accent);
+        Renderer::DrawText(49, row, Renderer::Pad("Min(us)", 12),      Theme::Accent);
+        Renderer::DrawText(61, row, Renderer::Pad("Max(us)", 12),      Theme::Accent);
+        Renderer::DrawText(73, row, Renderer::Pad("Score", 11),        Theme::Accent);
+        Renderer::DrawText(84, row, Renderer::Pad("Unit", 9),          Theme::Accent);
         row++;
         row = DrawSeparator(row);
 
-        // Data rows
-        int viewRows = static_cast<int>(Renderer::Rows()) - row - 6;
+        int viewRows = static_cast<int>(Renderer::Rows()) - row - 8;
         for (int i = 0; i < viewRows && (scroll + i) < resultCount; ++i) {
             auto& r = mLastResults[static_cast<UINTN>(scroll + i)];
 
-            Renderer::DrawText(2,  row, Renderer::Pad(r.Name, 22), Theme::Text);
-            Renderer::DrawText(24, row, Renderer::Pad(r.Category, 6), Theme::Accent);
+            Renderer::DrawText(2,  row, Renderer::Pad(r.Name, 22),     Theme::Text);
+            Renderer::DrawText(24, row, Renderer::Pad(r.Category, 6),  Theme::Accent);
 
-            // Core count with mode indicator
             char coreStr[16];
             if (r.MultiCore) {
                 const char* n = UintToStr(r.CoreCount);
                 int p = 0;
                 for (int j = 0; n[j] && p < 10; ++j) coreStr[p++] = n[j];
-                coreStr[p++] = 'x';
-                coreStr[p] = '\0';
+                coreStr[p++] = 'x'; coreStr[p] = '\0';
             } else {
                 coreStr[0] = '1'; coreStr[1] = '\0';
             }
@@ -416,17 +429,28 @@ void Tui::ShowResults() {
                                r.MultiCore ? Theme::Warning : Theme::TextDim);
 
             UINT64 avg = Stats::GetAverage(r.RunTimesUs);
-            UINT64 min = Stats::GetMin(r.RunTimesUs);
-            UINT64 max = Stats::GetMax(r.RunTimesUs);
+            UINT64 mn  = Stats::GetMin(r.RunTimesUs);
+            UINT64 mx  = Stats::GetMax(r.RunTimesUs);
 
             Renderer::DrawText(37, row, Renderer::Pad(UintToStr(avg), 12), Theme::Success);
-            Renderer::DrawText(49, row, Renderer::Pad(UintToStr(min), 12), Theme::TextDim);
-            Renderer::DrawText(61, row, Renderer::Pad(UintToStr(max), 12), Theme::TextDim);
-            Renderer::DrawText(73, row, Renderer::Pad(UintToStr(r.RunTimesUs.Size()), 6), Theme::TextDim);
+            Renderer::DrawText(49, row, Renderer::Pad(UintToStr(mn),  12), Theme::TextDim);
+            Renderer::DrawText(61, row, Renderer::Pad(UintToStr(mx),  12), Theme::TextDim);
+
+            if (r.Score > 0) {
+                Renderer::DrawText(73, row, Renderer::Pad(UintToStr(r.Score), 11), Theme::Accent);
+                Renderer::DrawText(84, row, Renderer::Pad(r.Unit,             9),  Theme::TextDim);
+            } else {
+                Renderer::DrawText(73, row, Renderer::Pad("---", 11), Theme::TextDim);
+            }
+
+            // Error count indicator for integrity test
+            if (r.ErrorCount > 0) {
+                Renderer::DrawText(93, row, "ERR", Theme::Error);
+            }
+
             row++;
         }
 
-        // Aggregate stats
         row++;
         row = DrawSeparator(row);
         UINT64 totalTime = 0;
@@ -437,6 +461,17 @@ void Tui::ShowResults() {
             Concat3("Total suite time: ", UintToStr(totalTime / 1000), " ms"),
             Theme::Text);
         row++;
+
+        // Integrity error summary
+        UINT64 totalErrors = 0;
+        for (UINTN i = 0; i < mLastResults.Size(); ++i)
+            totalErrors += mLastResults[i].ErrorCount;
+        if (totalErrors > 0) {
+            Renderer::DrawText(2, row,
+                Concat3("!! RAM ERRORS DETECTED: ", UintToStr(totalErrors), " mismatches !!"),
+                Theme::Error);
+            row++;
+        }
 
         if (Timer::IsCalibrated()) {
             Renderer::DrawText(2, row,
@@ -505,19 +540,29 @@ void Tui::ShowSystemInfo() {
     UINTN count = BenchmarkRegistry::Count();
     Renderer::DrawText(2, row, "Benchmarks:", Theme::TextDim);
     row++;
+
+    DurationClass lastDc = DurationClass::Long;
     for (UINTN i = 0; i < count; ++i) {
+        DurationClass dc = all[i]->GetDurationClass();
+        if (dc != lastDc || i == 0) {
+            const char* hdr = (dc == DurationClass::Short)
+                ? "  [Short running]"
+                : "  [Long running]";
+            Renderer::DrawText(2, row, hdr, Theme::TextDim);
+            row++;
+            lastDc = dc;
+        }
+
         char line[128];
         int p = 0;
-        line[p++] = ' '; line[p++] = ' '; line[p++] = '-'; line[p++] = ' ';
+        line[p++] = ' '; line[p++] = ' '; line[p++] = ' '; line[p++] = '-'; line[p++] = ' ';
         const char* n = all[i]->GetName();
         for (int j = 0; n[j] && p < 50; ++j) line[p++] = n[j];
-        // Pad to column 52
         while (p < 52) line[p++] = ' ';
         line[p++] = '[';
         const char* c = all[i]->GetCategory();
         for (int j = 0; c[j] && p < 65; ++j) line[p++] = c[j];
         line[p++] = ']';
-        // Show threading mode
         while (p < 70) line[p++] = ' ';
         ThreadingMode tm = all[i]->GetThreadingMode();
         const char* tmStr = (tm == ThreadingMode::SingleOnly) ? "Single" :

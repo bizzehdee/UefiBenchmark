@@ -1,6 +1,4 @@
 // UEFI application entry point.
-// Initialises globals, calibrates timer, detects system info,
-// registers benchmarks, and launches the TUI.
 
 #include "UefiTypes.h"
 #include "Freestanding.h"
@@ -8,12 +6,28 @@
 #include "SystemInfo.h"
 #include "Renderer.h"
 #include "BenchmarkRegistry.h"
+#include "CpuFeatures.h"
 #include "Tui.h"
 
-// Benchmarks
+// Existing short benchmarks
 #include "Benchmarks/CpuBenchmark.h"
 #include "Benchmarks/MemoryBenchmark.h"
 #include "Benchmarks/PiBenchmark.h"
+
+// Long CPU benchmarks
+#include "Benchmarks/IntThroughputBenchmark.h"
+#include "Benchmarks/IntLatencyBenchmark.h"
+#include "Benchmarks/FpScalarBenchmark.h"
+#include "Benchmarks/FpVectorBenchmark.h"
+#include "Benchmarks/BranchBenchmark.h"
+#include "Benchmarks/AesBenchmark.h"
+#include "Benchmarks/HashBenchmark.h"
+#include "Benchmarks/MandelbrotBenchmark.h"
+
+// Long memory benchmarks
+#include "Benchmarks/MemBandwidthBenchmark.h"
+#include "Benchmarks/MemLatencyBenchmark.h"
+#include "Benchmarks/MemIntegrityBenchmark.h"
 
 extern "C" EFI_STATUS EFIAPI EfiMain(
     EFI_HANDLE        ImageHandle,
@@ -24,17 +38,15 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     gBS          = SystemTable->BootServices;
     gImageHandle = ImageHandle;
 
-    // Disable watchdog timer (default 5-min timeout kills us)
     gBS->SetWatchdogTimer(0, 0, 0, nullptr);
 
-    // Reset keyboard input
     if (gST->ConIn)
         gST->ConIn->Reset(gST->ConIn, FALSE);
 
-    // ── 2. Early text output while initialising ──────────────
+    // ── 2. Early text output ─────────────────────────────────
     ConPrintLine("UEFI Benchmark Suite - Initialising...");
 
-    // ── 3. Initialise graphics (GOP) ─────────────────────────
+    // ── 3. Initialise graphics ───────────────────────────────
     bool gopOk = Renderer::Init(800, 600);
 
     if (gopOk) {
@@ -66,15 +78,15 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
             Renderer::DrawText(2, 5, line, Theme::TextDim);
         }
 
-        if (!Timer::HasInvariantTSC()) {
+        if (!Timer::HasInvariantTSC())
             Renderer::DrawText(2, 6, "Warning: Invariant TSC not detected", Theme::Warning);
-        }
     } else {
         ConPrintLine(Timer::IsCalibrated() ? "Timer calibrated." : "Timer calibration FAILED.");
     }
 
-    // ── 5. Detect system info ────────────────────────────────
+    // ── 5. Detect system info + CPU features ─────────────────
     SystemInfo::Detect();
+    CpuFeatures::Detect();
 
     if (gopOk) {
         Renderer::DrawText(2, 8, "Detecting system resources...", Theme::TextDim);
@@ -94,21 +106,70 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
         info[p] = '\0';
         Renderer::DrawText(2, 10, info, Theme::Text);
 
+        // Show detected CPU features
+        const auto& feat = CpuFeatures::Get();
+        char fline[80];
+        p = 0;
+        for (const char* s = "Features: "; *s; ++s) fline[p++] = *s;
+        if (feat.HasAVX2)  { for (const char* s = "AVX2 "; *s; ++s) fline[p++] = *s; }
+        if (feat.HasFMA)   { for (const char* s = "FMA "; *s; ++s) fline[p++] = *s; }
+        if (feat.HasAESNI) { for (const char* s = "AES "; *s; ++s) fline[p++] = *s; }
+        if (feat.HasSSE42) { for (const char* s = "SSE4.2 "; *s; ++s) fline[p++] = *s; }
+        fline[p] = '\0';
+        Renderer::DrawText(2, 11, fline, Theme::TextDim);
+
         Renderer::Present();
     }
 
     // ── 6. Register benchmarks ───────────────────────────────
+
+    // Short running (original 5)
     CpuBenchmark          cpuBench;
     MemoryBenchmarkSeq    memSeqBench;
     MemoryBenchmarkRandom memRndBench;
     PiBenchmarkScalar     piScalarBench;
     PiBenchmarkSimd       piSimdBench;
 
+    // Long CPU benchmarks
+    IntThroughputBenchmark  intThroughput;
+    IntLatencyBenchmark     intLatency;
+    FpScalarBenchmark       fpScalar;
+    FpVectorBenchmark       fpVector;
+    BranchBenchmark         branchBench;
+    AesBenchmark            aesBench;
+    HashBenchmark           hashBench;
+    MandelbrotBenchmark     mandelbrot;
+
+    // Long memory benchmarks
+    MemSeqWriteBenchmark    memSeqWrite;
+    MemSeqReadBenchmark     memSeqRead;
+    MemCopyBenchmark        memCopy;
+    MemLatencyBenchmark     memLatency;
+    MemIntegrityBenchmark   memIntegrity;
+
+    // Register short first
     BenchmarkRegistry::Register(&cpuBench);
     BenchmarkRegistry::Register(&memSeqBench);
     BenchmarkRegistry::Register(&memRndBench);
     BenchmarkRegistry::Register(&piScalarBench);
     BenchmarkRegistry::Register(&piSimdBench);
+
+    // Register long CPU
+    BenchmarkRegistry::Register(&intThroughput);
+    BenchmarkRegistry::Register(&intLatency);
+    BenchmarkRegistry::Register(&fpScalar);
+    BenchmarkRegistry::Register(&fpVector);
+    BenchmarkRegistry::Register(&branchBench);
+    BenchmarkRegistry::Register(&aesBench);
+    BenchmarkRegistry::Register(&hashBench);
+    BenchmarkRegistry::Register(&mandelbrot);
+
+    // Register long memory
+    BenchmarkRegistry::Register(&memSeqWrite);
+    BenchmarkRegistry::Register(&memSeqRead);
+    BenchmarkRegistry::Register(&memCopy);
+    BenchmarkRegistry::Register(&memLatency);
+    BenchmarkRegistry::Register(&memIntegrity);
 
     if (gopOk) {
         char msg[64];
@@ -118,8 +179,8 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
         for (int i = 0; nbuf[i]; ++i) msg[p++] = nbuf[i];
         for (const char* s = " benchmarks loaded."; *s; ++s) msg[p++] = *s;
         msg[p] = '\0';
-        Renderer::DrawText(2, 12, msg, Theme::TextDim);
-        Renderer::DrawText(2, 14, "Press any key to continue...", Theme::Warning);
+        Renderer::DrawText(2, 13, msg, Theme::TextDim);
+        Renderer::DrawText(2, 15, "Press any key to continue...", Theme::Warning);
         Renderer::Present();
         Renderer::WaitKey();
     } else {

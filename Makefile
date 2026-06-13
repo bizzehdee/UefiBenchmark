@@ -68,9 +68,22 @@ SOURCES  = \
 	$(SRCDIR)/BenchmarkRegistry.cpp \
 	$(SRCDIR)/BenchmarkRunner.cpp \
 	$(SRCDIR)/Tui.cpp \
+	$(SRCDIR)/CpuFeatures.cpp \
+	$(SRCDIR)/BigBuffer.cpp \
 	$(BMDIR)/CpuBenchmark.cpp \
 	$(BMDIR)/MemoryBenchmark.cpp \
 	$(BMDIR)/PiBenchmark.cpp \
+	$(BMDIR)/IntThroughputBenchmark.cpp \
+	$(BMDIR)/IntLatencyBenchmark.cpp \
+	$(BMDIR)/FpScalarBenchmark.cpp \
+	$(BMDIR)/FpVectorBenchmark.cpp \
+	$(BMDIR)/BranchBenchmark.cpp \
+	$(BMDIR)/AesBenchmark.cpp \
+	$(BMDIR)/HashBenchmark.cpp \
+	$(BMDIR)/MandelbrotBenchmark.cpp \
+	$(BMDIR)/MemBandwidthBenchmark.cpp \
+	$(BMDIR)/MemLatencyBenchmark.cpp \
+	$(BMDIR)/MemIntegrityBenchmark.cpp \
 	$(SRCDIR)/Main.cpp
 
 OBJECTS  = $(patsubst %.cpp,$(BUILDDIR)/%.o,$(notdir $(SOURCES)))
@@ -187,6 +200,19 @@ $(TARGET): $(OBJECTS)
 	@echo "  Toolchain: $(CXX)"
 	@echo ""
 endif
+
+# ── Per-file ISA overrides ────────────────────────────────────
+# Only these files get the extended ISA flags; all other files remain SSE2-only
+# so that AVX/AES instructions cannot appear before EnableAvxState() is called.
+
+$(BUILDDIR)/FpVectorBenchmark.o: $(BMDIR)/FpVectorBenchmark.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -mavx2 -mfma -c -o $@ $<
+
+$(BUILDDIR)/AesBenchmark.o: $(BMDIR)/AesBenchmark.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -maes -c -o $@ $<
+
+$(BUILDDIR)/HashBenchmark.o: $(BMDIR)/HashBenchmark.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -msse4.2 -c -o $@ $<
 
 # Include auto-generated header dependency files (.d)
 -include $(DEPENDS)

@@ -22,9 +22,22 @@
   Source/BenchmarkRegistry.cpp
   Source/BenchmarkRunner.cpp
   Source/Tui.cpp
+  Source/CpuFeatures.cpp
+  Source/BigBuffer.cpp
   Source/Benchmarks/CpuBenchmark.cpp
   Source/Benchmarks/MemoryBenchmark.cpp
   Source/Benchmarks/PiBenchmark.cpp
+  Source/Benchmarks/IntThroughputBenchmark.cpp
+  Source/Benchmarks/IntLatencyBenchmark.cpp
+  Source/Benchmarks/FpScalarBenchmark.cpp
+  Source/Benchmarks/FpVectorBenchmark.cpp
+  Source/Benchmarks/BranchBenchmark.cpp
+  Source/Benchmarks/AesBenchmark.cpp
+  Source/Benchmarks/HashBenchmark.cpp
+  Source/Benchmarks/MandelbrotBenchmark.cpp
+  Source/Benchmarks/MemBandwidthBenchmark.cpp
+  Source/Benchmarks/MemLatencyBenchmark.cpp
+  Source/Benchmarks/MemIntegrityBenchmark.cpp
   Source/Main.cpp
 
 [Packages]
@@ -43,3 +56,6 @@
 [BuildOptions]
   GCC:*_*_X64_CC_FLAGS   = -std=c++17 -fno-exceptions -fno-rtti -fno-stack-protector -IInclude -ISource
   MSFT:*_*_X64_CC_FLAGS  = /std:c++17 /GR- /EHsc- /IInclude /ISource
+  # Per-file ISA flags for SIMD/crypto benchmarks (EDK II does not support per-file flags
+  # directly; use the global flags here for EDK II builds, but restrict them in Makefile builds)
+  GCC:*_*_X64_CC_FLAGS   = -mavx2 -mfma -maes -msse4.2
