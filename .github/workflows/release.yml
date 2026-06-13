@@ -39,4 +39,4 @@ jobs:
           files: |
             Build/UefiBenchmark.efi
             Build/UefiBenchmark.iso
-          generate_release_notes: true
+          generate_release_notes: false
