@@ -85,6 +85,10 @@ SOURCES  = \
 	$(BMDIR)/MemBandwidthBenchmark.cpp \
 	$(BMDIR)/MemLatencyBenchmark.cpp \
 	$(BMDIR)/MemIntegrityBenchmark.cpp \
+	$(BMDIR)/AiInt8Benchmark.cpp \
+	$(BMDIR)/AiInt4Benchmark.cpp \
+	$(BMDIR)/AiMemBenchmark.cpp \
+	$(BMDIR)/AiCacheBenchmark.cpp \
 	$(SRCDIR)/Main.cpp
 
 OBJECTS  = $(patsubst %.cpp,$(BUILDDIR)/%.o,$(notdir $(SOURCES)))
@@ -214,6 +218,12 @@ $(BUILDDIR)/AesBenchmark.o: $(BMDIR)/AesBenchmark.cpp | $(BUILDDIR)
 
 $(BUILDDIR)/HashBenchmark.o: $(BMDIR)/HashBenchmark.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -msse4.2 -c -o $@ $<
+
+$(BUILDDIR)/AiInt8Benchmark.o: $(BMDIR)/AiInt8Benchmark.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -mavx2 -c -o $@ $<
+
+$(BUILDDIR)/AiInt4Benchmark.o: $(BMDIR)/AiInt4Benchmark.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -mavx2 -c -o $@ $<
 
 # Include auto-generated header dependency files (.d)
 -include $(DEPENDS)

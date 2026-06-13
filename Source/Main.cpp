@@ -30,6 +30,12 @@
 #include "Benchmarks/MemLatencyBenchmark.h"
 #include "Benchmarks/MemIntegrityBenchmark.h"
 
+// AI readiness benchmarks
+#include "Benchmarks/AiInt8Benchmark.h"
+#include "Benchmarks/AiInt4Benchmark.h"
+#include "Benchmarks/AiMemBenchmark.h"
+#include "Benchmarks/AiCacheBenchmark.h"
+
 extern "C" EFI_STATUS EFIAPI EfiMain(
     EFI_HANDLE        ImageHandle,
     EFI_SYSTEM_TABLE* SystemTable)
@@ -149,6 +155,12 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     MemLatencyBenchmark     memLatency;
     MemIntegrityBenchmark   memIntegrity;
 
+    // AI readiness benchmarks
+    AiInt8Benchmark         aiInt8;
+    AiInt4Benchmark         aiInt4;
+    AiMemBenchmark          aiMem;
+    AiCacheBenchmark        aiCache;
+
     // Register short first
     BenchmarkRegistry::Register(&cpuBench);
     BenchmarkRegistry::Register(&memSeqBench);
@@ -172,6 +184,12 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     BenchmarkRegistry::Register(&memCopy);
     BenchmarkRegistry::Register(&memLatency);
     BenchmarkRegistry::Register(&memIntegrity);
+
+    // Register AI benchmarks
+    BenchmarkRegistry::Register(&aiInt8);
+    BenchmarkRegistry::Register(&aiInt4);
+    BenchmarkRegistry::Register(&aiMem);
+    BenchmarkRegistry::Register(&aiCache);
 
     if (gopOk) {
         char msg[64];

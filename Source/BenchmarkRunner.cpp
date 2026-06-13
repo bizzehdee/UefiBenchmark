@@ -365,6 +365,7 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
     result.Score         = benchmark->GetScore();
     result.Unit          = benchmark->GetUnit();
     result.IncludeInScore = benchmark->IncludeInCategoryScore();
+    result.CategoryWeight = benchmark->GetCategoryWeight();
     return result;
 }
 

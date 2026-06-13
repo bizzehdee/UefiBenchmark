@@ -2,6 +2,7 @@
 // progress display, results table, and system info screen.
 
 #include "Tui.h"
+#include "AiScore.h"
 #include "CoreSelection.h"
 #include "Renderer.h"
 #include "BenchmarkRegistry.h"
@@ -568,8 +569,11 @@ void Tui::ShowCategoryResults(const char* category) {
         row++;
         row = DrawSeparator(row);
 
-        UINT64 compositeSum   = 0;
-        UINT32 compositeCount = 0;
+        // Accumulate weighted composite while rendering rows
+        UINT64 weightedSum   = 0;
+        UINT64 totalWeight   = 0;
+        bool   sameUnit      = true;
+        const char* firstUnit = nullptr;
 
         for (UINTN i = 0; i < mLastResults.Size(); ++i) {
             auto& r = mLastResults[i];
@@ -578,7 +582,6 @@ void Tui::ShowCategoryResults(const char* category) {
             Renderer::DrawText(2, row, Renderer::Pad(r.Name, 36), Theme::Current().Text);
 
             if (r.ErrorCount > 0) {
-                // Integrity-style test with errors
                 static char errStr[32];
                 int p = 0;
                 for (const char* s = "ERRORS: "; *s; ++s) errStr[p++] = *s;
@@ -588,37 +591,81 @@ void Tui::ShowCategoryResults(const char* category) {
                 Renderer::DrawText(38, row, Renderer::Pad(errStr, 14), Theme::Current().Error);
             } else if (r.Score > 0) {
                 Renderer::DrawText(38, row, Renderer::Pad(UintToStr(r.Score), 14), Theme::Current().Success);
-                Renderer::DrawText(52, row, Renderer::Pad(r.Unit, 12),            Theme::Current().TextDim);
+                Renderer::DrawText(52, row, Renderer::Pad(r.Unit, 12),             Theme::Current().TextDim);
                 if (r.IncludeInScore) {
-                    compositeSum += r.Score;
-                    ++compositeCount;
+                    if (!firstUnit) firstUnit = r.Unit;
+                    else if (StrCmp(firstUnit, r.Unit) != 0) sameUnit = false;
+                    weightedSum  += r.Score * r.CategoryWeight;
+                    totalWeight  += r.CategoryWeight;
                 }
             } else if (!r.IncludeInScore) {
-                Renderer::DrawText(38, row, Renderer::Pad("--", 14),        Theme::Current().TextDim);
-                Renderer::DrawText(52, row, "[pass/fail]",                  Theme::Current().TextDim);
+                Renderer::DrawText(38, row, Renderer::Pad("--", 14), Theme::Current().TextDim);
+                Renderer::DrawText(52, row, "[pass/fail]",            Theme::Current().TextDim);
             } else {
-                Renderer::DrawText(38, row, Renderer::Pad("--", 14),        Theme::Current().TextDim);
+                Renderer::DrawText(38, row, Renderer::Pad("--", 14), Theme::Current().TextDim);
             }
 
-            // Avg elapsed time in ms
             UINT64 avgUs = Stats::GetAverage(r.RunTimesUs);
             Renderer::DrawText(64, row, Renderer::Pad(UintToStr(avgUs / 1000), 12), Theme::Current().TextDim);
-
             row++;
         }
 
         row++;
         row = DrawSeparator(row);
 
-        // Composite score line
-        if (compositeCount > 1) {
-            UINT64 avg = compositeSum / compositeCount;
-            Renderer::DrawText(2,  row, "Composite (avg raw score):", Theme::Current().Accent);
-            Renderer::DrawText(38, row, Renderer::Pad(UintToStr(avg), 14), Theme::Current().Accent);
-            Renderer::DrawText(52, row, "(mixed units)", Theme::Current().TextDim);
+        // Weighted composite score
+        UINT64 composite = (totalWeight > 0) ? weightedSum / totalWeight : 0;
+        if (composite > 0) {
+            const char* compLabel = (totalWeight != (UINT64)100 * (totalWeight / 100))
+                                    ? "Weighted Score:"
+                                    : "Composite Score:";
+            Renderer::DrawText(2,  row, compLabel, Theme::Current().Accent);
+            Renderer::DrawText(38, row, Renderer::Pad(UintToStr(composite), 14), Theme::Current().Accent);
+            if (sameUnit && firstUnit)
+                Renderer::DrawText(52, row, Renderer::Pad(firstUnit, 12), Theme::Current().TextDim);
+            else
+                Renderer::DrawText(52, row, "(mixed units)", Theme::Current().TextDim);
             row++;
         }
 
+        // AI-specific LLM performance estimates
+        if (composite > 0 && StrCmp(category, "AI") == 0) {
+            row++;
+            Renderer::DrawText(2, row, "LLM Performance Estimate (llama.cpp, approx.):",
+                               Theme::Current().Accent);
+            row++;
+            Renderer::DrawText(4,  row, "Model:",   Theme::Current().TextDim);
+            Renderer::DrawText(20, row, "7B Q4",    Theme::Current().TextDim);
+            Renderer::DrawText(32, row, "14B Q4",   Theme::Current().TextDim);
+            Renderer::DrawText(44, row, "32B Q4",   Theme::Current().TextDim);
+            row++;
+
+            // Format X.Y tok/s using ×10 fixed-point arithmetic
+            auto fmtTok = [](char* buf, UINT64 score, UINT32 ref_x10) -> const char* {
+                UINT64 t = score * ref_x10 / 1000;
+                int p = 0;
+                const char* n = UintToStr(t / 10);
+                for (int i = 0; n[i]; ++i) buf[p++] = n[i];
+                buf[p++] = '.';
+                buf[p++] = '0' + (char)(t % 10);
+                for (const char* s = " t/s"; *s; ++s) buf[p++] = *s;
+                buf[p] = '\0';
+                return buf;
+            };
+
+            static char t7[16], t14[16], t32[16];
+            Renderer::DrawText(4,  row, "Est:",
+                               Theme::Current().Text);
+            Renderer::DrawText(20, row,
+                fmtTok(t7,  composite, AI_LLM_7B_Q4_TOKS_X10),  Theme::Current().Success);
+            Renderer::DrawText(32, row,
+                fmtTok(t14, composite, AI_LLM_14B_Q4_TOKS_X10), Theme::Current().Success);
+            Renderer::DrawText(44, row,
+                fmtTok(t32, composite, AI_LLM_32B_Q4_TOKS_X10), Theme::Current().Success);
+            row++;
+        }
+
+        row++;
         // Total time
         UINT64 totalUs = 0;
         for (UINTN i = 0; i < mLastResults.Size(); ++i) totalUs += mLastResults[i].TotalTimeUs;

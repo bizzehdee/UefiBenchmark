@@ -52,6 +52,9 @@ public:
     // the category composite score.
     virtual bool IncludeInCategoryScore() const { return true; }
 
+    // Relative weight (0-100) used for weighted composite in category results.
+    virtual UINT32 GetCategoryWeight() const { return 100; }
+
     virtual void SetProgressCallback(ProgressFn /*fn*/, void* /*ctx*/) {}
 
     virtual void Setup()    {}
