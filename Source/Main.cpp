@@ -47,7 +47,7 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     ConPrintLine("UEFI Benchmark Suite - Initialising...");
 
     // ── 3. Initialise graphics ───────────────────────────────
-    bool gopOk = Renderer::Init(800, 600);
+    bool gopOk = Renderer::Init(1024, 768);
 
     if (gopOk) {
         Renderer::Clear();

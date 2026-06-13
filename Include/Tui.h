@@ -18,6 +18,7 @@ private:
                        UINTN count, UINTN runs);
     void ShowResults();
     void ShowSystemInfo();
+    void ShowResolutionPicker();
 
     // UI helpers
     int  DrawHeader(const char* title, int startRow = 0);

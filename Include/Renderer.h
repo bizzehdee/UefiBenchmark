@@ -7,9 +7,17 @@
 
 namespace Renderer {
 
-// Initialise graphics. Tries GOP first; falls back to text mode.
-// Returns true if GOP mode was established.
-bool Init(UINT32 preferredWidth = 800, UINT32 preferredHeight = 600);
+// Available GOP mode descriptor (de-duplicated by resolution, BGR preferred).
+struct ModeDesc {
+    UINT32 ModeIndex;
+    UINT32 Width;
+    UINT32 Height;
+    bool   IsBGR;
+};
+
+// Initialise graphics. Auto-selects 1024x768 (then 1920x1080, then 800x600,
+// then closest available). Returns true if GOP mode was established.
+bool Init(UINT32 preferredWidth = 1024, UINT32 preferredHeight = 768);
 
 // Is GOP available? If false, only text-mode functions work.
 bool IsGraphics();
@@ -17,8 +25,23 @@ bool IsGraphics();
 // Screen dimensions
 UINT32 ScreenWidth();
 UINT32 ScreenHeight();
-UINT32 Columns();  // text columns  (ScreenWidth / 8)
-UINT32 Rows();     // text rows     (ScreenHeight / 16)
+UINT32 Columns();  // text columns  (ScreenWidth / (8 * FontScale))
+UINT32 Rows();     // text rows     (ScreenHeight / (16 * FontScale))
+
+// Integer font scale factor (1 or 2). Set automatically based on resolution.
+UINT32 FontScale();
+
+// ── Resolution management ───────────────────────────────────
+// Fill `out` with up to `cap` de-duplicated available GOP modes.
+// Returns the number of modes written.
+UINT32 ListModes(ModeDesc* out, UINT32 cap);
+
+// Switch to a GOP mode by ModeIndex (from ListModes). Reallocates the
+// back-buffer and sets font scale. Returns false on failure.
+bool SetModeByIndex(UINT32 modeIndex);
+
+// Index of the currently active GOP mode.
+UINT32 CurrentModeIndex();
 
 // ── Drawing (GOP mode) ──────────────────────────────────────
 void Clear();

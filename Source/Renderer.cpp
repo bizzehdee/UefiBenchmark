@@ -15,6 +15,8 @@ static UINT32  sWidth        = 0;
 static UINT32  sHeight       = 0;
 static bool    sIsGop        = false;
 static bool    sIsBGR        = true;     // default to BGR (most common in UEFI)
+static UINT32  sFontScale    = 1;        // integer block scale for glyph rendering
+static UINT32  sCurrentMode  = 0;        // active GOP mode index
 
 static EFI_GRAPHICS_OUTPUT_PROTOCOL* sGop = nullptr;
 
@@ -46,6 +48,16 @@ static void FillRect(int px, int py, int pw, int ph, Color color) {
     }
 }
 
+// ── Font scale helper ─────────────────────────────────────────
+static void UpdateFontScale(UINT32 w) {
+    // Scale ×2 at 1920+ width, ×1 otherwise.
+    // Guard: if ×2 would give fewer than 100 columns, fall back to ×1.
+    UINT32 scale = (w >= 1920) ? 2 : 1;
+    if ((w / (static_cast<UINT32>(BitmapFont::CHAR_WIDTH) * scale)) < 100)
+        scale = 1;
+    sFontScale = scale;
+}
+
 // ── Init ─────────────────────────────────────────────────────
 bool Init(UINT32 preferredWidth, UINT32 preferredHeight) {
     if (!gBS) return false;
@@ -62,36 +74,57 @@ bool Init(UINT32 preferredWidth, UINT32 preferredHeight) {
         return false;
     }
 
-    // Find best matching mode
-    UINT32 bestMode = sGop->Mode->Mode; // current mode as fallback
-    UINT32 bestW = 0, bestH = 0;
+    // Preference list: try exact matches in priority order, then fall back to
+    // closest-distance so we always land on a valid mode.
+    struct Pref { UINT32 w, h; };
+    constexpr Pref kPrefs[] = {{1024, 768}, {1920, 1080}, {800, 600}};
+    constexpr UINT32 kPrefCount = 3;
+
+    UINT32 bestMode = sGop->Mode->Mode;
+    UINT32 bestW = 0;
     UINT32 bestDist = 0xFFFFFFFF;
 
+    // First pass: try preference list in order (exact match wins immediately)
+    for (UINT32 pi = 0; pi < kPrefCount; ++pi) {
+        for (UINT32 m = 0; m < sGop->Mode->MaxMode; ++m) {
+            EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* info = nullptr;
+            UINTN infoSize = 0;
+            status = sGop->QueryMode(sGop, m, &infoSize, &info);
+            if (EFI_ERROR(status) || !info) continue;
+            if (info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
+                info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor)
+                continue;
+            if (info->HorizontalResolution == kPrefs[pi].w &&
+                info->VerticalResolution   == kPrefs[pi].h) {
+                bestMode = m;
+                bestW    = kPrefs[pi].w;
+                goto modeFound;
+            }
+        }
+    }
+
+    // Fallback: closest distance to the caller-supplied preferred resolution
     for (UINT32 m = 0; m < sGop->Mode->MaxMode; ++m) {
         EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* info = nullptr;
         UINTN infoSize = 0;
         status = sGop->QueryMode(sGop, m, &infoSize, &info);
         if (EFI_ERROR(status) || !info) continue;
-
-        // Only accept 32-bit pixel formats
         if (info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
             info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor)
             continue;
-
         UINT32 w = info->HorizontalResolution;
         UINT32 h = info->VerticalResolution;
         UINT32 dw = w > preferredWidth  ? w - preferredWidth  : preferredWidth  - w;
         UINT32 dh = h > preferredHeight ? h - preferredHeight : preferredHeight - h;
         UINT32 dist = dw + dh;
-
         if (dist < bestDist) {
             bestDist = dist;
             bestMode = m;
             bestW = w;
-            bestH = h;
         }
     }
 
+modeFound:
     // Set the chosen mode
     if (bestW > 0) {
         status = sGop->SetMode(sGop, bestMode);
@@ -102,12 +135,14 @@ bool Init(UINT32 preferredWidth, UINT32 preferredHeight) {
     }
 
     // Read mode info
+    sCurrentMode = sGop->Mode->Mode;
     sWidth  = sGop->Mode->Info->HorizontalResolution;
     sHeight = sGop->Mode->Info->VerticalResolution;
     sPitch  = sGop->Mode->Info->PixelsPerScanLine;
     sHwFb   = reinterpret_cast<UINT32*>(sGop->Mode->FrameBufferBase);
+    sIsBGR  = (sGop->Mode->Info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor);
 
-    sIsBGR = (sGop->Mode->Info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor);
+    UpdateFontScale(sWidth);
 
     // Allocate back-buffer
     UINTN fbSize = static_cast<UINTN>(sPitch) * sHeight * sizeof(UINT32);
@@ -125,11 +160,89 @@ bool Init(UINT32 preferredWidth, UINT32 preferredHeight) {
     return true;
 }
 
-bool   IsGraphics()   { return sIsGop; }
-UINT32 ScreenWidth()  { return sWidth; }
-UINT32 ScreenHeight() { return sHeight; }
-UINT32 Columns()      { return sIsGop ? sWidth / BitmapFont::CHAR_WIDTH : 80; }
-UINT32 Rows()         { return sIsGop ? sHeight / BitmapFont::CHAR_HEIGHT : 25; }
+bool   IsGraphics()      { return sIsGop; }
+UINT32 ScreenWidth()     { return sWidth; }
+UINT32 ScreenHeight()    { return sHeight; }
+UINT32 FontScale()       { return sFontScale; }
+UINT32 CurrentModeIndex(){ return sCurrentMode; }
+UINT32 Columns() {
+    return sIsGop ? sWidth  / (static_cast<UINT32>(BitmapFont::CHAR_WIDTH)  * sFontScale) : 80;
+}
+UINT32 Rows() {
+    return sIsGop ? sHeight / (static_cast<UINT32>(BitmapFont::CHAR_HEIGHT) * sFontScale) : 25;
+}
+
+// ── Resolution management ─────────────────────────────────────
+UINT32 ListModes(ModeDesc* out, UINT32 cap) {
+    if (!sGop || !out || cap == 0) return 0;
+    UINT32 count = 0;
+    for (UINT32 m = 0; m < sGop->Mode->MaxMode && count < cap; ++m) {
+        EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* info = nullptr;
+        UINTN infoSize = 0;
+        EFI_STATUS status = sGop->QueryMode(sGop, m, &infoSize, &info);
+        if (EFI_ERROR(status) || !info) continue;
+        if (info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
+            info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor)
+            continue;
+        UINT32 w = info->HorizontalResolution;
+        UINT32 h = info->VerticalResolution;
+        bool isBGR = (info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor);
+
+        // De-duplicate: if this WxH already recorded, prefer BGR entry
+        bool found = false;
+        for (UINT32 j = 0; j < count; ++j) {
+            if (out[j].Width == w && out[j].Height == h) {
+                if (isBGR && !out[j].IsBGR) {
+                    out[j].ModeIndex = m;
+                    out[j].IsBGR = true;
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            out[count++] = { m, w, h, isBGR };
+        }
+    }
+    return count;
+}
+
+bool SetModeByIndex(UINT32 modeIndex) {
+    if (!sGop || !gBS) return false;
+
+    EFI_STATUS status = sGop->SetMode(sGop, modeIndex);
+    if (EFI_ERROR(status)) return false;
+
+    // Free old back-buffer
+    if (sFramebuffer) {
+        gBS->FreePool(sFramebuffer);
+        sFramebuffer = nullptr;
+    }
+
+    // Update state from new mode
+    sCurrentMode = sGop->Mode->Mode;
+    sWidth  = sGop->Mode->Info->HorizontalResolution;
+    sHeight = sGop->Mode->Info->VerticalResolution;
+    sPitch  = sGop->Mode->Info->PixelsPerScanLine;
+    sHwFb   = reinterpret_cast<UINT32*>(sGop->Mode->FrameBufferBase);
+    sIsBGR  = (sGop->Mode->Info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor);
+
+    UpdateFontScale(sWidth);
+
+    // Allocate new back-buffer
+    UINTN fbSize = static_cast<UINTN>(sPitch) * sHeight * sizeof(UINT32);
+    status = gBS->AllocatePool(EfiLoaderData, fbSize,
+                               reinterpret_cast<VOID**>(&sFramebuffer));
+    if (EFI_ERROR(status)) {
+        sFramebuffer = nullptr;
+        sIsGop = false;
+        return false;
+    }
+
+    Clear();
+    Present();
+    return true;
+}
 
 // ── Clear ────────────────────────────────────────────────────
 void Clear() {
@@ -149,26 +262,32 @@ void Clear(Color color) {
 void DrawText(int col, int row, const char* text, Color fg) {
     if (!sIsGop || !sFramebuffer || !text) return;
     if (row < 0 || row >= static_cast<int>(Rows())) return;
-    int px = col * BitmapFont::CHAR_WIDTH;
-    int py = row * BitmapFont::CHAR_HEIGHT;
+    int effW = BitmapFont::CHAR_WIDTH  * static_cast<int>(sFontScale);
+    int effH = BitmapFont::CHAR_HEIGHT * static_cast<int>(sFontScale);
+    int px   = col * effW;
+    int py   = row * effH;
 
-    // Respect pixel format
+    UINT32 pixel = ToPixel(fg);
     for (int i = 0; text[i]; ++i) {
-        int cx = px + i * BitmapFont::CHAR_WIDTH;
-        if (cx + BitmapFont::CHAR_WIDTH > static_cast<int>(sWidth)) break;
+        int cx = px + i * effW;
+        if (cx + effW > static_cast<int>(sWidth)) break;
 
         int idx = text[i] - BitmapFont::FIRST_CHAR;
         if (idx < 0 || idx >= BitmapFont::CHAR_COUNT) continue;
 
-        UINT32 pixel = ToPixel(fg);
         const UINT8* glyph = BitmapFont::GetFontData() + idx * BitmapFont::CHAR_HEIGHT;
         for (int r = 0; r < BitmapFont::CHAR_HEIGHT; ++r) {
             UINT8 bits = glyph[r];
             if (bits == 0) continue;
-            UINT32* line = sFramebuffer + static_cast<UINT32>(py + r) * sPitch;
-            for (int c = 0; c < BitmapFont::CHAR_WIDTH; ++c) {
-                if (bits & (1 << (7 - c)))
-                    line[cx + c] = pixel;
+            for (int sy = 0; sy < static_cast<int>(sFontScale); ++sy) {
+                UINT32* line = sFramebuffer +
+                    static_cast<UINT32>(py + r * static_cast<int>(sFontScale) + sy) * sPitch;
+                for (int c = 0; c < BitmapFont::CHAR_WIDTH; ++c) {
+                    if (bits & (1 << (7 - c))) {
+                        for (int sx = 0; sx < static_cast<int>(sFontScale); ++sx)
+                            line[cx + c * static_cast<int>(sFontScale) + sx] = pixel;
+                    }
+                }
             }
         }
     }
@@ -177,18 +296,21 @@ void DrawText(int col, int row, const char* text, Color fg) {
 void DrawTextBg(int col, int row, const char* text, Color fg, Color bg) {
     if (!sIsGop || !sFramebuffer || !text) return;
     if (row < 0 || row >= static_cast<int>(Rows())) return;
-    int px = col * BitmapFont::CHAR_WIDTH;
-    int py = row * BitmapFont::CHAR_HEIGHT;
-    int len = static_cast<int>(StrLen(text));
-    FillRect(px, py, len * BitmapFont::CHAR_WIDTH, BitmapFont::CHAR_HEIGHT, bg);
+    int effW = BitmapFont::CHAR_WIDTH  * static_cast<int>(sFontScale);
+    int effH = BitmapFont::CHAR_HEIGHT * static_cast<int>(sFontScale);
+    int px   = col * effW;
+    int py   = row * effH;
+    int len  = static_cast<int>(StrLen(text));
+    FillRect(px, py, len * effW, effH, bg);
     DrawText(col, row, text, fg);
 }
 
 void FillRow(int row, Color color) {
     if (!sIsGop || !sFramebuffer) return;
     if (row < 0 || row >= static_cast<int>(Rows())) return;
-    int py = row * BitmapFont::CHAR_HEIGHT;
-    Renderer::FillRect(0, py, static_cast<int>(sWidth), BitmapFont::CHAR_HEIGHT, color);
+    int effH = BitmapFont::CHAR_HEIGHT * static_cast<int>(sFontScale);
+    int py   = row * effH;
+    Renderer::FillRect(0, py, static_cast<int>(sWidth), effH, color);
 }
 
 // ── Present ──────────────────────────────────────────────────

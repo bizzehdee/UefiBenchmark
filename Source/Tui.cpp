@@ -134,9 +134,10 @@ void Tui::ShowMainMenu() {
         "Select Benchmarks",
         "View Last Results",
         "System Info",
+        "Change Resolution",
         "Shutdown"
     };
-    constexpr int OPT_COUNT = 6;
+    constexpr int OPT_COUNT = 7;
     int cursor = 0;
 
     while (true) {
@@ -191,7 +192,8 @@ void Tui::ShowMainMenu() {
                 case 2: ShowBenchmarkSelection(); break;
                 case 3: ShowResults();            break;
                 case 4: ShowSystemInfo();         break;
-                case 5: return;
+                case 5: ShowResolutionPicker();   break;
+                case 6: return;
             }
         }
     }
@@ -492,6 +494,93 @@ void Tui::ShowResults() {
         if (key.ScanCode == SCAN_UP && scroll > 0) --scroll;
         else if (key.ScanCode == SCAN_DOWN && scroll + viewRows < resultCount) ++scroll;
         else if (key.ScanCode == SCAN_ESC) return;
+    }
+}
+
+// ── Resolution Picker ─────────────────────────────────────────
+
+void Tui::ShowResolutionPicker() {
+    Renderer::ModeDesc modes[64];
+    UINT32 modeCount = Renderer::ListModes(modes, 64);
+
+    if (modeCount == 0) {
+        Renderer::Clear();
+        DrawHeader("Change Resolution");
+        Renderer::DrawText(2, 5, "No additional modes available.", Theme::Warning);
+        DrawFooter("[Any key] Back");
+        Renderer::Present();
+        Renderer::WaitKey();
+        return;
+    }
+
+    // Find which entry matches the current mode
+    UINT32 current = Renderer::CurrentModeIndex();
+    int cursor = 0;
+    for (UINT32 i = 0; i < modeCount; ++i) {
+        if (modes[i].ModeIndex == current) { cursor = static_cast<int>(i); break; }
+    }
+
+    while (true) {
+        Renderer::Clear();
+        int row = DrawHeader("Change Resolution");
+        row++;
+        Renderer::DrawText(2, row, "Select a display resolution:", Theme::TextDim);
+        row += 2;
+
+        int menuStart = row;
+        for (UINT32 i = 0; i < modeCount; ++i) {
+            // Build label: "1920 x 1080  [current]"
+            char label[80];
+            int p = 0;
+            const char* ws = UintToStr(modes[i].Width);
+            for (int j = 0; ws[j]; ++j) label[p++] = ws[j];
+            label[p++] = ' '; label[p++] = 'x'; label[p++] = ' ';
+            const char* hs = UintToStr(modes[i].Height);
+            for (int j = 0; hs[j]; ++j) label[p++] = hs[j];
+            if (modes[i].ModeIndex == current) {
+                for (const char* s = "  [current]"; *s && p < 78; ++s) label[p++] = *s;
+            }
+            label[p] = '\0';
+            DrawMenuItem(menuStart + static_cast<int>(i), label,
+                         static_cast<int>(i) == cursor);
+        }
+
+        row = menuStart + static_cast<int>(modeCount) + 1;
+        DrawSeparator(row - 1);
+        Renderer::DrawText(2, row,
+            Concat3("Current: ", UintToStr(Renderer::ScreenWidth()),
+                    Concat2("x", UintToStr(Renderer::ScreenHeight()))),
+            Theme::TextDim);
+
+        DrawFooter("[Up/Down] Navigate  [Enter] Apply  [Esc] Cancel");
+        Renderer::Present();
+
+        EFI_INPUT_KEY key = Renderer::WaitKey();
+        if (key.ScanCode == SCAN_UP)
+            cursor = (cursor - 1 + static_cast<int>(modeCount)) % static_cast<int>(modeCount);
+        else if (key.ScanCode == SCAN_DOWN)
+            cursor = (cursor + 1) % static_cast<int>(modeCount);
+        else if (key.ScanCode == SCAN_ESC)
+            return;
+        else if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') {
+            UINT32 chosen = modes[static_cast<UINT32>(cursor)].ModeIndex;
+            if (chosen == current) return; // no change
+            if (Renderer::SetModeByIndex(chosen)) {
+                current = Renderer::CurrentModeIndex();
+                // Redraw immediately after mode switch
+                Renderer::Clear();
+                DrawHeader("Change Resolution");
+                Renderer::DrawText(2, 5, "Resolution applied.", Theme::Success);
+                Renderer::DrawText(2, 7,
+                    Concat3(UintToStr(Renderer::ScreenWidth()), "x",
+                            UintToStr(Renderer::ScreenHeight())),
+                    Theme::Text);
+                DrawFooter("[Any key] Continue");
+                Renderer::Present();
+                Renderer::WaitKey();
+            }
+            return;
+        }
     }
 }
 
