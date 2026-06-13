@@ -11,6 +11,9 @@ A freestanding C++ UEFI application that benchmarks CPU and memory performance d
 - **Per-benchmark threading mode** — each benchmark declares SingleOnly, MultiOnly, or Either; user toggles mode in the selection screen
 - **Multi-run benchmarks** — configure 1–10 runs per benchmark with per-run min/max/avg statistics
 - **Keyboard-driven TUI** — arrow keys, Enter, Space, Esc navigation
+- **TimeBox runner** — time-budgeted execution engine with live progress callbacks for long-running benchmarks
+- **BigBuffer allocator** — greedy whole-RAM capture (~85-90% of free memory) across discontiguous segments; worker-aware partitioning with cache-line alignment
+- **CPU feature detection** — automatic CPUID-based detection of SSE2, SSE4.2, AVX, AVX2, FMA, AES-NI; on-demand AVX state enablement
 - **Extensible** — add new benchmarks by implementing `IBenchmark` and registering in `Main.cpp`
 
 ## Included Benchmarks
@@ -180,6 +183,18 @@ The output is a `UefiBenchmark.efi` PE32+ executable. To boot it:
 
 ![Benchmark Results](screenshots/5.png)
 
+**High Contrast Mode** — High Contrast mode for better visibility.
+
+![High Contrast Mode](screenshots/6.png)
+
+**Core Selection** — Select cores on which to run multicore benchmarks.
+
+![Core Selection](screenshots/7.png)
+
+**Resolution Selection** — Select a resolution better fitting for your screen.
+
+![Resolution Selection](screenshots/8.png)
+
 ## Adding a New Benchmark
 
 1. Create a header and source file in `Source/Benchmarks/`:
@@ -219,42 +234,6 @@ BenchmarkRegistry::Register(&sMyBench);
 ```
 
 3. Add the .cpp to the `SOURCES` list in the `Makefile` and the `[Sources]` section in `UefiBenchmark.inf`.
-
-## Project Structure
-
-```
-Include/
-  UefiTypes.h           Minimal self-contained UEFI type definitions (x86-64)
-  Freestanding.h        Vector<T>, operator new/delete, memset/memcpy, string utils
-  IBenchmark.h          Abstract benchmark interface
-  BenchmarkResult.h     Per-benchmark result with multi-run timing data
-  BenchmarkRegistry.h   Static fixed-capacity registry (max 32 benchmarks)
-  BenchmarkRunner.h     Sequential runner with configurable run count
-  Statistics.h          Min / Max / Average / Sum helpers
-  Timer.h               TSC-based stopwatch with UEFI Stall() calibration
-  SystemInfo.h          CPUID + GetMemoryMap detection
-  BitmapFont.h          8×16 bitmap font renderer
-  Renderer.h            GOP framebuffer + character-grid API + ConOut fallback
-  ColorTheme.h          Colour palette (dark theme, fully customisable)
-  Tui.h                 TUI manager (menus, results, system info)
-
-Source/
-  Main.cpp              EfiMain entry point — init, register benchmarks, launch TUI
-  Freestanding.cpp      Memory primitives, operator new/delete, string utils
-  Timer.cpp             TSC calibration (3 samples, median, CPUID fence)
-  SystemInfo.cpp        CPUID vendor/brand/topology + UEFI memory map
-  BitmapFont.cpp        Font bitmap data (ASCII 32–126)
-  Renderer.cpp          GOP init, pixel format detection, back-buffer, text drawing
-  BenchmarkRegistry.cpp Registry implementation
-  BenchmarkRunner.cpp   Run engine with progress display
-  Tui.cpp               Full TUI: main menu, selection, run picker, results, sysinfo
-  Benchmarks/
-    *.h / *.cpp         CPU and memory benchmarks (see Included Benchmarks section)
-
-UefiBenchmark.inf     EDK II module definition
-UefiBenchmark.dsc     EDK II platform descriptor
-Makefile              MinGW cross-compiler build + QEMU test target
-```
 
 ## Design Notes
 
