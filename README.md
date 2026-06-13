@@ -158,6 +158,28 @@ The output is a `UefiBenchmark.efi` PE32+ executable. To boot it:
 3. **USB stick**: Format a USB drive as FAT32, copy the .efi to `EFI/BOOT/BOOTX64.EFI`
 4. **VM**: Attach a FAT32 virtual disk or the ISO at boot
 
+## Screenshots
+
+**Main Menu** — Start your benchmark run or access system information and results.
+
+![Main Menu](screenshots/1.png)
+
+**System Information** — Displays CPU details, available memory, and a complete list of registered benchmarks with their threading modes.
+
+![System Information](screenshots/2.png)
+
+**Benchmark Selection** — Choose which benchmarks to run and toggle between single-core and multi-core modes.
+
+![Benchmark Selection](screenshots/3.png)
+
+**Progress Display** — Real-time view of currently running benchmark with progress tracking.
+
+![Running Benchmarks](screenshots/4.png)
+
+**Results Summary** — Comprehensive results table with per-benchmark statistics (min, max, average) and total suite runtime.
+
+![Benchmark Results](screenshots/5.png)
+
 ## Adding a New Benchmark
 
 1. Create a header and source file in `Source/Benchmarks/`:
