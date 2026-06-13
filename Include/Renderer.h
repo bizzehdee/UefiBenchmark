@@ -64,6 +64,9 @@ void TextClear();
 // ── Input ───────────────────────────────────────────────────
 // Block until a key is pressed. Returns scan code + unicode char.
 EFI_INPUT_KEY WaitKey();
+// Discard all keys currently queued in the input buffer.
+// Call once when entering a new screen to avoid stale key carry-over.
+void FlushInput();
 
 // ── Helpers ─────────────────────────────────────────────────
 // Pad or truncate a string to exactly `width` characters.

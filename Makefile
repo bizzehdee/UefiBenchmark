@@ -148,7 +148,7 @@ ISO_TOOL := $(shell if command -v xorriso >/dev/null 2>&1; then echo xorriso; \
                    elif command -v mkisofs >/dev/null 2>&1; then echo mkisofs; fi)
 
 # ── Rules ─────────────────────────────────────────────────────
-.PHONY: all clean disk iso qemu help check-toolchain check-iso-tools
+.PHONY: all clean disk iso qemu qemusingle help check-toolchain check-iso-tools
 
 all: check-toolchain $(TARGET)
 
@@ -286,6 +286,19 @@ qemu: disk
 		-bios $(OVMF) \
 		-drive format=raw,file=$(DISKIMG) \
 		-m 512M \
+		-smp 4 \
+		-cpu qemu64 \
+		-net none \
+		-serial stdio
+
+qemusingle: disk
+	@test -f "$(OVMF)" || { echo "Error: OVMF not found at $(OVMF)"; \
+		echo "Install OVMF or override:  make qemusingle OVMF=/path/to/OVMF.fd"; \
+		exit 1; }
+	qemu-system-x86_64 \
+		-bios $(OVMF) \
+		-drive format=raw,file=$(DISKIMG) \
+		-m 512M \
 		-cpu qemu64 \
 		-net none \
 		-serial stdio
@@ -297,7 +310,8 @@ help:
 	@echo "  make              Build UefiBenchmark.efi"
 	@echo "  make disk         Build + create bootable FAT32 disk image"
 	@echo "  make iso          Build + create bootable UEFI ISO image"
-	@echo "  make qemu         Build + boot in QEMU (requires OVMF + mtools)"
+	@echo "  make qemu         Build + boot in QEMU with 4 cores (requires OVMF + mtools)"
+	@echo "  make qemusingle   Build + boot in QEMU with 1 core"
 	@echo "  make clean        Remove build artifacts"
 	@echo "  make help         Show this help"
 	@echo ""

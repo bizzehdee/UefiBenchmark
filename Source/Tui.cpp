@@ -143,12 +143,11 @@ void Tui::ShowMainMenu() {
     constexpr int OPT_COUNT = 9;
     int cursor = 0;
 
+    Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("UEFI BENCHMARK SUITE");
         row++;
-        Renderer::DrawText(2, row, "C++ Freestanding UEFI Benchmark Tool", Theme::Current().TextDim);
-        row += 2;
 
         int menuStart = row;
         for (int i = 0; i < OPT_COUNT; ++i)
@@ -223,6 +222,7 @@ void Tui::ShowBenchmarkSelection() {
     bool multiCore[32] = {};
     int cursor = 0;
 
+    Renderer::FlushInput();
     bool mpAvail = SystemInfo::HasMpServices();
     UINT32 apCount = 0;
     if (mpAvail) {
@@ -348,6 +348,7 @@ void Tui::ShowRunCountPicker(const UINTN* indices, const bool* multiCore,
                              UINTN count) {
     int runs = 1; // default 1 for long benchmarks
 
+    Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("Set Run Count");
@@ -399,6 +400,7 @@ void Tui::ShowResults() {
     int scroll = 0;
     int resultCount = static_cast<int>(mLastResults.Size());
 
+    Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("Benchmark Results");
@@ -519,6 +521,7 @@ void Tui::ShowThemePicker() {
         if (kThemes[i].id == Theme::CurrentId()) { cursor = i; break; }
     }
 
+    Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("Change Theme");
@@ -584,6 +587,7 @@ void Tui::ShowResolutionPicker() {
         if (modes[i].ModeIndex == current) { cursor = static_cast<int>(i); break; }
     }
 
+    Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("Change Resolution");
@@ -665,6 +669,7 @@ void Tui::ShowCorePicker() {
     CoreSelection::ApInfo* roster = CoreSelection::GetAll();
     int cursor = 0;
 
+    Renderer::FlushInput();
     while (true) {
         Renderer::Clear();
         int row = DrawHeader("Select Cores");

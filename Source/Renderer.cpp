@@ -20,6 +20,21 @@ static UINT32  sCurrentMode  = 0;        // active GOP mode index
 
 static EFI_GRAPHICS_OUTPUT_PROTOCOL* sGop = nullptr;
 
+// ── Dirty-row tracking ────────────────────────────────────────
+// Bitmask of character-grid rows written since the last Present().
+// Supports up to 128 text rows (covers any plausible UEFI resolution).
+static UINT64 sDirtyMask[2] = {};
+
+static void MarkRowsDirty(int first, int last) {
+    for (int r = first; r <= last && r < 128; ++r)
+        sDirtyMask[r >> 6] |= (1ULL << (r & 63));
+}
+static inline bool IsRowDirty(int r) {
+    return r < 128 && ((sDirtyMask[r >> 6] >> (r & 63)) & 1);
+}
+static void ClearDirtyMask()  { sDirtyMask[0] = sDirtyMask[1] = 0; }
+static void MarkAllDirty()    { sDirtyMask[0] = sDirtyMask[1] = ~0ULL; }
+
 // ── Internal helpers ─────────────────────────────────────────
 
 // Convert a Color to a framebuffer pixel according to detected pixel format
@@ -40,6 +55,9 @@ static inline UINT32 ToPixel(Color c) {
 static void FillRect(int px, int py, int pw, int ph, Color color) {
     if (!sFramebuffer) return;
     UINT32 pixel = ToPixel(color);
+    int effH = static_cast<int>(BitmapFont::CHAR_HEIGHT) * static_cast<int>(sFontScale);
+    if (effH > 0)
+        MarkRowsDirty(py / effH, (py + ph - 1) / effH);
     for (int y = py; y < py + ph && y < static_cast<int>(sHeight); ++y) {
         UINT32* row = sFramebuffer + static_cast<UINT32>(y) * sPitch;
         for (int x = px; x < px + pw && x < static_cast<int>(sWidth); ++x) {
@@ -251,6 +269,7 @@ void Clear() {
 
 void Clear(Color color) {
     if (sIsGop && sFramebuffer) {
+        MarkAllDirty();
         UINT32 pixel = ToPixel(color);
         UINTN total = static_cast<UINTN>(sPitch) * sHeight;
         for (UINTN i = 0; i < total; ++i)
@@ -262,6 +281,7 @@ void Clear(Color color) {
 void DrawText(int col, int row, const char* text, Color fg) {
     if (!sIsGop || !sFramebuffer || !text) return;
     if (row < 0 || row >= static_cast<int>(Rows())) return;
+    MarkRowsDirty(row, row);
     int effW = BitmapFont::CHAR_WIDTH  * static_cast<int>(sFontScale);
     int effH = BitmapFont::CHAR_HEIGHT * static_cast<int>(sFontScale);
     int px   = col * effW;
@@ -315,10 +335,28 @@ void FillRow(int row, Color color) {
 
 // ── Present ──────────────────────────────────────────────────
 void Present() {
-    if (sIsGop && sFramebuffer && sHwFb) {
-        UINTN bytes = static_cast<UINTN>(sPitch) * sHeight * sizeof(UINT32);
-        memcpy(sHwFb, sFramebuffer, bytes);
+    if (!sIsGop || !sFramebuffer || !sHwFb) return;
+
+    int effH      = static_cast<int>(BitmapFont::CHAR_HEIGHT) * static_cast<int>(sFontScale);
+    int textRows  = (effH > 0) ? static_cast<int>(sHeight) / effH : 0;
+    UINTN rowBytes = static_cast<UINTN>(sPitch) * static_cast<UINTN>(effH) * sizeof(UINT32);
+
+    for (int r = 0; r < textRows && r < 128; ++r) {
+        if (!IsRowDirty(r)) continue;
+        UINTN offset = static_cast<UINTN>(r * effH) * sPitch;
+        memcpy(sHwFb + offset, sFramebuffer + offset, rowBytes);
     }
+
+    // Handle any remaining pixel rows below the last full text row
+    int pixelsDone = textRows * effH;
+    if (static_cast<UINT32>(pixelsDone) < sHeight) {
+        UINTN offset    = static_cast<UINTN>(pixelsDone) * sPitch;
+        UINTN remaining = (static_cast<UINTN>(sHeight) - static_cast<UINTN>(pixelsDone))
+                          * sPitch * sizeof(UINT32);
+        memcpy(sHwFb + offset, sFramebuffer + offset, remaining);
+    }
+
+    ClearDirtyMask();
 }
 
 // ── Text-mode fallback ───────────────────────────────────────
@@ -332,14 +370,15 @@ void TextClear() {
 }
 
 // ── Input ────────────────────────────────────────────────────
+void FlushInput() {
+    if (!gST || !gST->ConIn) return;
+    EFI_INPUT_KEY key = {};
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &key) == EFI_SUCCESS) {}
+}
+
 EFI_INPUT_KEY WaitKey() {
     EFI_INPUT_KEY key = {};
     if (!gST || !gST->ConIn) return key;
-
-    // Drain any pending keys
-    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &key) == EFI_SUCCESS) {}
-
-    // Wait for a key event
     UINTN index = 0;
     gBS->WaitForEvent(1, &gST->ConIn->WaitForKey, &index);
     gST->ConIn->ReadKeyStroke(gST->ConIn, &key);
