@@ -32,6 +32,32 @@ void* memcpy(void* dest, const void* src, UINTN count) {
     return dest;
 }
 
+void* optimized_memcpy(void* dest, const void* src, UINTN count) {
+    auto d = static_cast<UINT8*>(dest);
+    auto s = static_cast<const UINT8*>(src);
+
+    // 1. Copy in 64-bit (8-byte) chunks as much as possible
+    UINTN blocks = count / 8;
+    if (blocks > 0) {
+        auto d64 = reinterpret_cast<UINT64*>(d);
+        auto s64 = reinterpret_cast<const UINT64*>(s);
+        for (UINTN i = 0; i < blocks; ++i) {
+            d64[i] = s64[i]; // Moves 8 bytes at a time!
+        }
+        // Advance the pointers by the number of bytes we just copied
+        d += blocks * 8;
+        s += blocks * 8;
+        count %= 8; // Remaining bytes left over
+    }
+
+    // 2. Clean up remaining trailing bytes (0 to 7 bytes)
+    for (UINTN i = 0; i < count; ++i) {
+        d[i] = s[i];
+    }
+
+    return dest;
+}
+
 void* memmove(void* dest, const void* src, UINTN count) {
     auto d = static_cast<UINT8*>(dest);
     auto s = static_cast<const UINT8*>(src);

@@ -6,7 +6,7 @@
 // The AVX2 path uses _mm256_loadu_si256 (unaligned load from shadow buffer,
 // which AllocatePool aligns to 8 bytes) and _mm256_stream_si256 (aligned
 // non-temporal store to the GOP framebuffer, which is always page-aligned).
-// A runtime guard falls back to memcpy if AVX2 is absent or not yet enabled.
+// A runtime guard falls back to optimized_memcpy if AVX2 is absent or not yet enabled.
 
 #include "VideoEngine.h"
 #include "CpuFeatures.h"
@@ -27,28 +27,58 @@ static bool                sInitialized  = false;
 // dst must be 32-byte aligned — GOP framebuffers are page-aligned and
 // standard scanline widths (800, 1024, 1920 … ×4 bytes) are multiples
 // of 32, so every row-start address is 32-byte aligned in practice.
+
 __attribute__((target("avx2")))
 static void BltAvx2(UINT8* dst, const UINT8* src, UINTN bytes) {
-    // Bail to scalar if dst somehow lacks the required 32-byte alignment.
+    // 1. Structural Alignment Guard
     if (reinterpret_cast<UINTN>(dst) & 31u) {
-        memcpy(dst, src, bytes);
+        optimized_memcpy(dst, src, bytes);
         return;
     }
-    UINTN blocks = bytes / 32;
-    for (UINTN i = 0; i < blocks; ++i) {
-        // Unaligned load — shadow buffer has only 8-byte alignment guarantee
-        __m256i v = _mm256_loadu_si256(
-            reinterpret_cast<const __m256i*>(src + i * 32));
-        // Non-temporal store — bypasses the CPU cache hierarchy so we do not
-        // evict useful TUI data when pushing megabytes of pixel data
-        _mm256_stream_si256(
-            reinterpret_cast<__m256i*>(dst + i * 32), v);
+
+    // Cast directly to the target types to eliminate manual multiplications in the loop
+    auto* d256 = reinterpret_cast<__m256i*>(dst);
+    auto* s256 = reinterpret_cast<const __m256i*>(src);
+
+    // 2. Unroll by 4 blocks (128 bytes per loop iteration)
+    UINTN blocks_128 = bytes / 128;
+    for (UINTN i = 0; i < blocks_128; ++i) {
+        // Queue up multiple unaligned loads back-to-back. 
+        // This lets the CPU pipelining architecture overlap memory fetch latencies.
+        __m256i v0 = _mm256_loadu_si256(s256 + 0);
+        __m256i v1 = _mm256_loadu_si256(s256 + 1);
+        __m256i v2 = _mm256_loadu_si256(s256 + 2);
+        __m256i v3 = _mm256_loadu_si256(s256 + 3);
+
+        // Stream them to the cache-bypassing controller sequentially
+        _mm256_stream_si256(d256 + 0, v0);
+        _mm256_stream_si256(d256 + 1, v1);
+        _mm256_stream_si256(d256 + 2, v2);
+        _mm256_stream_si256(d256 + 3, v3);
+
+        s256 += 4;
+        d256 += 4;
     }
-    // Scalar tail for any sub-32-byte remainder at the end of the region
-    UINTN tail = blocks * 32;
-    for (UINTN j = tail; j < bytes; ++j)
-        dst[j] = src[j];
-    // Ensure all non-temporal stores reach the PCIe device before we return
+
+    // 3. Handle the remaining 32-byte chunks (0 to 3 blocks left over)
+    UINTN remaining_bytes = bytes % 128;
+    UINTN blocks_32 = remaining_bytes / 32;
+    for (UINTN i = 0; i < blocks_32; ++i) {
+        __m256i v = _mm256_loadu_si256(s256);
+        _mm256_stream_si256(d256, v);
+        s256++;
+        d256++;
+    }
+
+    // 4. Optimized Tail: Drop back to our 64-bit word fallback, not an 8-bit loop
+    remaining_bytes %= 32;
+    if (remaining_bytes > 0) {
+        auto* d_tail = reinterpret_cast<UINT8*>(d256);
+        auto* s_tail = reinterpret_cast<const UINT8*>(s256);
+        optimized_memcpy(d_tail, s_tail, remaining_bytes);
+    }
+
+    // 5. Commit non-temporal buffers to physical memory
     _mm_sfence();
 }
 
@@ -90,7 +120,7 @@ void Present() {
     if (IsAvx2Active()) {
         BltAvx2(dst, src, bytes);
     } else {
-        memcpy(dst, src, bytes);
+        optimized_memcpy(dst, src, bytes);
     }
 
     // Reset dirty range — engine is clean until next MarkDirty() call

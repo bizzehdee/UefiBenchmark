@@ -9,6 +9,7 @@
 extern "C" {
 void* memset(void* dest, int val, UINTN count);
 void* memcpy(void* dest, const void* src, UINTN count);
+void* optimized_memcpy(void *dest, const void *src, UINTN count);
 void* memmove(void* dest, const void* src, UINTN count);
 int   memcmp(const void* a, const void* b, UINTN count);
 }
