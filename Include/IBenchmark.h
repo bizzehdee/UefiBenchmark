@@ -15,15 +15,6 @@ enum class RunMode : int {
     CoreCycle  = 2  // run on each core sequentially; produces per-core score table
 };
 
-enum class DurationClass : int {
-    Short = 0,  // original five benchmarks (~seconds)
-    Long  = 1   // new CPU/memory suite (~minutes)
-};
-
-inline const char* DurationClassName(DurationClass dc) {
-    return dc == DurationClass::Long ? "Long running" : "Short running";
-}
-
 // Progress snapshot emitted by long benchmarks while running.
 struct ProgressReport {
     UINT64      ElapsedUs;
@@ -41,7 +32,6 @@ public:
     virtual const char* GetCategory()    const = 0;
 
     virtual ThreadingMode GetThreadingMode()  const { return ThreadingMode::Either; }
-    virtual DurationClass GetDurationClass()  const { return DurationClass::Short; }
 
     // Optional throughput score for time-boxed benchmarks.
     // GetScore() returns the result of the most recent run.

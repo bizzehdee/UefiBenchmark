@@ -9,8 +9,6 @@
 
 class LongBenchmarkBase : public IBenchmark {
 public:
-    DurationClass GetDurationClass() const override { return DurationClass::Long; }
-
     void SetProgressCallback(ProgressFn fn, void* ctx) override {
         mProgressFn    = fn;
         mProgressCtx   = ctx;

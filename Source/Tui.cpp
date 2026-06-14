@@ -134,12 +134,7 @@ void Tui::Run() {
 // ── Main Menu ────────────────────────────────────────────────
 
 void Tui::ShowMainMenu() {
-    // Static entries before the dynamic category block
-    static const char* kPreCat[] = {
-        "Run All Short Benchmarks",
-        "Run All Long Benchmarks",
-    };
-    constexpr int kPreCount = 2;
+    constexpr int kPreCount = 0;
 
     // Static entries after the dynamic category block
     static const char* kPostCat[] = {
@@ -166,9 +161,8 @@ void Tui::ShowMainMenu() {
         catLabels[i][p] = '\0';
     }
 
-    // Flat option array (max 2 + 8 + 7 = 17)
-    const char* opts[17];
-    for (int i = 0; i < kPreCount; ++i) opts[i] = kPreCat[i];
+    // Flat option array (max 8 + 7 = 15)
+    const char* opts[15];
     for (UINT32 i = 0; i < catCount; ++i) opts[kPreCount + i] = catLabels[i];
     for (int i = 0; i < kPostCount; ++i) opts[kPreCount + catCount + i] = kPostCat[i];
     int totalOpts = kPreCount + (int)catCount + kPostCount;
@@ -209,38 +203,9 @@ void Tui::ShowMainMenu() {
         else if (key.ScanCode == SCAN_DOWN)
             cursor = (cursor + 1) % totalOpts;
         else if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') {
-            if (cursor == 0) {
-                // Run All Short
-                IBenchmark** all = BenchmarkRegistry::GetAll();
-                UINTN total = BenchmarkRegistry::Count();
-                UINTN indices[32]; RunMode modes[32]; UINTN cnt = 0;
-                for (UINTN i = 0; i < total && cnt < 32; ++i) {
-                    if (all[i]->GetDurationClass() == DurationClass::Short) {
-                        indices[cnt] = i;
-                        modes[cnt] = (all[i]->GetThreadingMode() == ThreadingMode::MultiOnly)
-                                      ? RunMode::MultiCore : RunMode::SingleCore;
-                        ++cnt;
-                    }
-                }
-                if (cnt) ShowRunCountPicker(indices, modes, cnt);
-            } else if (cursor == 1) {
-                // Run All Long
-                IBenchmark** all = BenchmarkRegistry::GetAll();
-                UINTN total = BenchmarkRegistry::Count();
-                UINTN indices[32]; RunMode modes[32]; UINTN cnt = 0;
-                for (UINTN i = 0; i < total && cnt < 32; ++i) {
-                    if (all[i]->GetDurationClass() == DurationClass::Long) {
-                        indices[cnt] = i;
-                        modes[cnt] = (all[i]->GetThreadingMode() != ThreadingMode::SingleOnly)
-                                      ? RunMode::MultiCore : RunMode::SingleCore;
-                        ++cnt;
-                    }
-                }
-                if (cnt) ShowRunCountPicker(indices, modes, cnt);
-            } else if (cursor >= kPreCount && cursor < kPreCount + (int)catCount) {
+            if (cursor < (int)catCount) {
                 // Run All <Category>
-                int catIdx = cursor - kPreCount;
-                const char* catName = BenchmarkRegistry::GetCategoryName((UINT32)catIdx);
+                const char* catName = BenchmarkRegistry::GetCategoryName((UINT32)cursor);
                 IBenchmark** all = BenchmarkRegistry::GetAll();
                 UINTN total = BenchmarkRegistry::Count();
                 UINTN indices[32]; RunMode modes[32]; UINTN cnt = 0;
@@ -248,14 +213,8 @@ void Tui::ShowMainMenu() {
                     if (StrCmp(all[i]->GetCategory(), catName) != 0) continue;
                     indices[cnt] = i;
                     ThreadingMode tm = all[i]->GetThreadingMode();
-                    if (tm == ThreadingMode::SingleOnly) {
-                        modes[cnt] = RunMode::SingleCore;
-                    } else if (tm == ThreadingMode::MultiOnly ||
-                               all[i]->GetDurationClass() == DurationClass::Long) {
-                        modes[cnt] = RunMode::MultiCore;
-                    } else {
-                        modes[cnt] = RunMode::SingleCore;
-                    }
+                    modes[cnt] = (tm == ThreadingMode::SingleOnly)
+                                 ? RunMode::SingleCore : RunMode::MultiCore;
                     ++cnt;
                 }
                 if (cnt) {
@@ -264,7 +223,7 @@ void Tui::ShowMainMenu() {
                     mLastCategory = nullptr;
                 }
             } else {
-                int postIdx = cursor - kPreCount - (int)catCount;
+                int postIdx = cursor - (int)catCount;
                 switch (postIdx) {
                     case 0: ShowBenchmarkSelection(); break;
                     case 1: ShowResults();            break;
@@ -337,17 +296,7 @@ void Tui::ShowBenchmarkSelection() {
         sBenchSelectVp.ClearContent();
         int cursorVpRow = 0;
 
-        DurationClass lastDc = DurationClass::Long; // force header on first item
         for (UINTN i = 0; i < bmCount; ++i) {
-            DurationClass dc = all[i]->GetDurationClass();
-            if (dc != lastDc || i == 0) {
-                const char* hdr = (dc == DurationClass::Short)
-                    ? "  -- Short running --"
-                    : "  -- Long running --";
-                sBenchSelectVp.AddLine(hdr, Theme::Current().TextDim);
-                lastDc = dc;
-            }
-
             ThreadingMode tm = all[i]->GetThreadingMode();
             const char* name = all[i]->GetName();
             const char* cat  = all[i]->GetCategory();
@@ -1389,16 +1338,8 @@ void Tui::ShowSystemInfo() {
 
     IBenchmark** all  = BenchmarkRegistry::GetAll();
     UINTN        bmCount = BenchmarkRegistry::Count();
-    DurationClass lastDc = DurationClass::Long;
     char bmLine[ScrollViewport::MAX_WIDTH];
     for (UINTN i = 0; i < bmCount; ++i) {
-        DurationClass dc = all[i]->GetDurationClass();
-        if (dc != lastDc || i == 0) {
-            vp.AddLine(dc == DurationClass::Short
-                       ? "    [Short running]" : "    [Long running]",
-                       Theme::Current().TextDim);
-            lastDc = dc;
-        }
         int p = 0;
         bmLine[p++] = ' '; bmLine[p++] = ' '; bmLine[p++] = ' '; bmLine[p++] = '-'; bmLine[p++] = ' ';
         const char* nm = all[i]->GetName();
@@ -1427,7 +1368,7 @@ void Tui::ShowSystemInfo() {
         Renderer::Clear();
         DrawHeader("System Information");
         vp.Render(headerRows, viewRows);
-        DrawFooter("[Up/Dn/PgUp/PgDn] Scroll  [A] AI Suitability  [D] SMBus Debug  [Esc] Back");
+        DrawFooter("[Up/Dn/PgUp/PgDn] Scroll  [A] AI Suitability  [Esc] Back");
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
@@ -1438,7 +1379,7 @@ void Tui::ShowSystemInfo() {
             break;
         }
         if (key.UnicodeChar == 'd' || key.UnicodeChar == 'D') {
-            ShowSmbusDebug();  // Tui::ShowSmbusDebug
+            ShowSmbusDebug();
             break;
         }
         vp.HandleKey(key, viewRows);

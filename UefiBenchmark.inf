@@ -27,9 +27,6 @@
   Source/CpuFeatures.cpp
   Source/BigBuffer.cpp
   Source/VideoEngine.cpp
-  Source/Benchmarks/CpuBenchmark.cpp
-  Source/Benchmarks/MemoryBenchmark.cpp
-  Source/Benchmarks/PiBenchmark.cpp
   Source/Benchmarks/IntThroughputBenchmark.cpp
   Source/Benchmarks/IntLatencyBenchmark.cpp
   Source/Benchmarks/FpScalarBenchmark.cpp
@@ -45,6 +42,10 @@
   Source/Benchmarks/AiInt4Benchmark.cpp
   Source/Benchmarks/AiMemBenchmark.cpp
   Source/Benchmarks/AiCacheBenchmark.cpp
+  Source/Benchmarks/StressMemClockBenchmark.cpp
+  Source/Benchmarks/StressMemLatencyBenchmark.cpp
+  Source/Benchmarks/StressCpuPowerBenchmark.cpp
+  Source/Benchmarks/StressCpuVerifyBenchmark.cpp
   Source/Main.cpp
 
 [Packages]

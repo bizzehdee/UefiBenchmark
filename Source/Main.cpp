@@ -10,11 +10,6 @@
 #include "CpuFeatures.h"
 #include "Tui.h"
 
-// Existing short benchmarks
-#include "Benchmarks/CpuBenchmark.h"
-#include "Benchmarks/MemoryBenchmark.h"
-#include "Benchmarks/PiBenchmark.h"
-
 // Long CPU benchmarks
 #include "Benchmarks/IntThroughputBenchmark.h"
 #include "Benchmarks/IntLatencyBenchmark.h"
@@ -35,6 +30,12 @@
 #include "Benchmarks/AiInt4Benchmark.h"
 #include "Benchmarks/AiMemBenchmark.h"
 #include "Benchmarks/AiCacheBenchmark.h"
+
+// Stress benchmarks (overclock validation)
+#include "Benchmarks/StressMemClockBenchmark.h"
+#include "Benchmarks/StressMemLatencyBenchmark.h"
+#include "Benchmarks/StressCpuPowerBenchmark.h"
+#include "Benchmarks/StressCpuVerifyBenchmark.h"
 
 extern "C" EFI_STATUS EFIAPI EfiMain(
     EFI_HANDLE        ImageHandle,
@@ -131,13 +132,6 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
 
     // ── 6. Register benchmarks ───────────────────────────────
 
-    // Short running (original 5)
-    CpuBenchmark          cpuBench;
-    MemoryBenchmarkSeq    memSeqBench;
-    MemoryBenchmarkRandom memRndBench;
-    PiBenchmarkScalar     piScalarBench;
-    PiBenchmarkSimd       piSimdBench;
-
     // Long CPU benchmarks
     IntThroughputBenchmark  intThroughput;
     IntLatencyBenchmark     intLatency;
@@ -161,12 +155,11 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     AiMemBenchmark          aiMem;
     AiCacheBenchmark        aiCache;
 
-    // Register short first
-    BenchmarkRegistry::Register(&cpuBench);
-    BenchmarkRegistry::Register(&memSeqBench);
-    BenchmarkRegistry::Register(&memRndBench);
-    BenchmarkRegistry::Register(&piScalarBench);
-    BenchmarkRegistry::Register(&piSimdBench);
+    // Stress benchmarks (overclock validation)
+    StressMemClockBenchmark   stressMemClock;
+    StressMemLatencyBenchmark stressMemLatency;
+    StressCpuPowerBenchmark   stressCpuPower;
+    StressCpuVerifyBenchmark  stressCpuVerify;
 
     // Register long CPU
     BenchmarkRegistry::Register(&intThroughput);
@@ -190,6 +183,12 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     BenchmarkRegistry::Register(&aiInt4);
     BenchmarkRegistry::Register(&aiMem);
     BenchmarkRegistry::Register(&aiCache);
+
+    // Register stress benchmarks
+    BenchmarkRegistry::Register(&stressMemClock);
+    BenchmarkRegistry::Register(&stressMemLatency);
+    BenchmarkRegistry::Register(&stressCpuPower);
+    BenchmarkRegistry::Register(&stressCpuVerify);
 
     if (gopOk) {
         char msg[64];

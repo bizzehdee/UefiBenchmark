@@ -73,9 +73,6 @@ SOURCES  = \
 	$(SRCDIR)/CpuFeatures.cpp \
 	$(SRCDIR)/BigBuffer.cpp \
 	$(SRCDIR)/VideoEngine.cpp \
-	$(BMDIR)/CpuBenchmark.cpp \
-	$(BMDIR)/MemoryBenchmark.cpp \
-	$(BMDIR)/PiBenchmark.cpp \
 	$(BMDIR)/IntThroughputBenchmark.cpp \
 	$(BMDIR)/IntLatencyBenchmark.cpp \
 	$(BMDIR)/FpScalarBenchmark.cpp \
@@ -91,6 +88,10 @@ SOURCES  = \
 	$(BMDIR)/AiInt4Benchmark.cpp \
 	$(BMDIR)/AiMemBenchmark.cpp \
 	$(BMDIR)/AiCacheBenchmark.cpp \
+	$(BMDIR)/StressMemClockBenchmark.cpp \
+	$(BMDIR)/StressMemLatencyBenchmark.cpp \
+	$(BMDIR)/StressCpuPowerBenchmark.cpp \
+	$(BMDIR)/StressCpuVerifyBenchmark.cpp \
 	$(SRCDIR)/Main.cpp
 
 OBJECTS  = $(patsubst %.cpp,$(BUILDDIR)/%.o,$(notdir $(SOURCES)))
@@ -236,6 +237,9 @@ $(BUILDDIR)/AesBenchmark.o: $(BMDIR)/AesBenchmark.cpp | $(BUILDDIR)
 
 $(BUILDDIR)/HashBenchmark.o: $(BMDIR)/HashBenchmark.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -msse4.2 -c -o $@ $<
+
+$(BUILDDIR)/StressCpuPowerBenchmark.o: $(BMDIR)/StressCpuPowerBenchmark.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -mavx2 -mfma -c -o $@ $<
 
 $(BUILDDIR)/AiInt8Benchmark.o: $(BMDIR)/AiInt8Benchmark.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -mavx2 -c -o $@ $<

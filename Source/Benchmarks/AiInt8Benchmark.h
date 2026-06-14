@@ -15,7 +15,6 @@ public:
     }
     const char* GetCategory()    const override { return "AI"; }
 
-    DurationClass  GetDurationClass()  const override { return DurationClass::Long; }
     ThreadingMode  GetThreadingMode()  const override { return ThreadingMode::Either; }
     UINT32         GetCategoryWeight() const override { return AI_WEIGHT_INT8; }
 

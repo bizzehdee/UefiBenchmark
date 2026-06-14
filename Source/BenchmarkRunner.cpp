@@ -236,92 +236,6 @@ static void DrawLiveProgress(const ProgressReport& r, void* vctx) {
     Renderer::Present();
 }
 
-// ── Progress (short benchmarks) ──────────────────────────────
-
-static void DrawProgress(const char* title, const char* name,
-                         UINTN current, UINTN total, bool multiCore) {
-    Renderer::Clear();
-    const int cols = static_cast<int>(Renderer::Columns());
-    const int rows = static_cast<int>(Renderer::Rows());
-
-    // Header
-    Renderer::FillRow(0, Theme::Current().HeaderBorder);
-    Renderer::DrawText(2, 0, "BENCHMARK IN PROGRESS", Theme::Current().HeaderText);
-    Renderer::FillRow(1, Theme::Current().Separator);
-
-    // Suite/title on row 2
-    if (sCatCtx.Name) {
-        static char catTitle[64];
-        int p = ProgAppend(catTitle, 0, sCatCtx.Name);
-        p = ProgAppend(catTitle, p, " Suite");
-        catTitle[p] = '\0';
-        Renderer::DrawText(2, 2, catTitle, Theme::Current().TextDim);
-    } else {
-        Renderer::DrawText(2, 2, title, Theme::Current().TextDim);
-    }
-
-    // Benchmark name on row 3
-    {
-        static char nb[128];
-        int p = 0;
-        nb[p++] = ' '; nb[p++] = ' ';
-        p = ProgAppend(nb, p, name);
-        nb[p] = '\0';
-        Renderer::DrawText(0, 3, nb, Theme::Current().Accent);
-
-        const char* modeStr = multiCore ? "Multi-core" : "Single-core (BSP)";
-        int ml = 0;
-        for (; modeStr[ml]; ++ml) {}
-        Renderer::DrawText(cols - ml - 2, 3, modeStr, Theme::Current().TextDim);
-    }
-
-    // Overall progress bar on row 5
-    {
-        UINTN pct = total > 0 ? ((current - 1) * 100ULL / total) : 0;
-
-        static char bar[80];
-        int p = 0;
-        bar[p++] = ' '; bar[p++] = ' ';
-        bar[p++] = '[';
-        const int W = 32;
-        int filled = (int)(pct * W / 100);
-        for (int i = 0; i < W; ++i) bar[p++] = (i < filled) ? '#' : '.';
-        bar[p++] = ']';
-        bar[p++] = ' ';
-        if (pct >= 100) {
-            bar[p++] = '1'; bar[p++] = '0'; bar[p++] = '0';
-        } else if (pct >= 10) {
-            bar[p++] = ' ';
-            bar[p++] = (char)('0' + pct / 10);
-            bar[p++] = (char)('0' + pct % 10);
-        } else {
-            bar[p++] = ' '; bar[p++] = ' ';
-            bar[p++] = (char)('0' + pct);
-        }
-        bar[p++] = '%';
-        bar[p] = '\0';
-        Renderer::DrawText(0, 5, bar, Theme::Current().CheckMark);
-
-        // "X / Y" count on the right
-        static char cnt[32];
-        p = ProgAppend(cnt, 0, UintToStr(current - 1));
-        p = ProgAppend(cnt, p, " / ");
-        p = ProgAppend(cnt, p, UintToStr(total));
-        cnt[p] = '\0';
-        Renderer::DrawText(cols - p - 2, 5, cnt, Theme::Current().TextDim);
-    }
-
-    Renderer::DrawText(2, 9, "System is working normally.  Please wait...", Theme::Current().TextDim);
-
-    // Footer
-    Renderer::FillRow(rows - 3, Theme::Current().Separator);
-    const char* copy = "(c) 2026 Darren Horrocks | https://github.com/bizzehdee/UefiBenchmark | MIT License";
-    Renderer::DrawTextBg(0, rows - 2, Renderer::Pad(copy, cols), Theme::Current().Footer, Theme::Current().Background);
-    Renderer::DrawTextBg(0, rows - 1, Renderer::Pad("", cols), Theme::Current().TextDim, Theme::Current().Background);
-
-    Renderer::Present();
-}
-
 // ── RunSingle ────────────────────────────────────────────────
 
 BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
@@ -355,17 +269,14 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
                       && (benchmark->GetThreadingMode() != ThreadingMode::SingleOnly);
     if (includeBsp) result.CoreCount = apCount + 1;  // APs + BSP
 
-    // Set up live progress callback for long benchmarks
-    bool isLong = (benchmark->GetDurationClass() == DurationClass::Long);
+    // Set up live progress callback
     ProgressCtx pCtx = {};
-    if (isLong) {
-        pCtx.Name       = benchmark->GetName();
-        pCtx.MultiCore  = multiCore && result.CoreCount > 1;
-        pCtx.CoreCount  = result.CoreCount;  // already includes BSP when includeBsp is set
-        pCtx.IncludeBsp = includeBsp;
-        pCtx.IsBspPhase = false;
-        benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
-    }
+    pCtx.Name       = benchmark->GetName();
+    pCtx.MultiCore  = multiCore && result.CoreCount > 1;
+    pCtx.CoreCount  = result.CoreCount;
+    pCtx.IncludeBsp = includeBsp;
+    pCtx.IsBspPhase = false;
+    benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
 
     // Build list of APs to temporarily disable (unselected but available APs)
     UINTN disabledAPs[CoreSelection::MAX_APS];
@@ -407,14 +318,12 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
                 elapsed = Timer::ElapsedUs();
             } else if (includeBsp) {
                 // BSP sequential phase: BSP runs as the last worker slot
-                if (isLong) {
-                    pCtx.IsBspPhase = true;
-                    benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
-                }
+                pCtx.IsBspPhase = true;
+                benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
                 Timer::Start();
                 benchmark->RunCore(apCount, ctx.TotalWorkers);
                 elapsed += Timer::ElapsedUs();
-                if (isLong) pCtx.IsBspPhase = false;
+                pCtx.IsBspPhase = false;
             }
 
             result.RunTimesUs.PushBack(elapsed);
@@ -434,9 +343,7 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
             mp->EnableDisableAP(mp, disabledAPs[i], TRUE, nullptr);
     }
 
-    if (isLong) {
-        benchmark->SetProgressCallback(nullptr, nullptr);
-    }
+    benchmark->SetProgressCallback(nullptr, nullptr);
 
     result.TotalTimeUs   = Stats::GetSum(result.RunTimesUs);
     result.Score         = benchmark->GetScore();
@@ -489,8 +396,7 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     result.PerCoreSampleCount = apCount;
     result.RunTimesUs.Reserve(apCount * runs);
 
-    // Progress context for live display — always populated for core-cycle
-    bool isLong = (benchmark->GetDurationClass() == DurationClass::Long);
+    // Progress context for live display
     ProgressCtx pCtx;
     pCtx.Name             = benchmark->GetName();
     pCtx.MultiCore        = false;
@@ -500,10 +406,7 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     pCtx.CycleTotalRuns   = static_cast<UINT32>(runs);
     pCtx.CycleCurrentCore = 1;
     pCtx.CycleCurrentRun  = 1;
-
-    if (isLong) {
-        benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
-    }
+    benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
 
     benchmark->Setup();
 
@@ -524,17 +427,6 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
 
         for (UINTN r = 0; r < runs; ++r) {
             pCtx.CycleCurrentRun = static_cast<UINT32>(r + 1);
-
-            if (!isLong) {
-                ProgressReport pr;
-                UINT64 totalSteps = (UINT64)apCount * runs;
-                UINT64 doneSteps  = (UINT64)c * runs + r;
-                pr.ElapsedUs = doneSteps;
-                pr.BudgetUs  = totalSteps;
-                pr.Score     = 0;
-                pr.Unit      = benchmark->GetUnit();
-                DrawLiveProgress(pr, &pCtx);
-            }
 
             benchmark->PreRun();
             Timer::Start();
@@ -563,7 +455,7 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
 
     benchmark->Teardown();
 
-    if (isLong) benchmark->SetProgressCallback(nullptr, nullptr);
+    benchmark->SetProgressCallback(nullptr, nullptr);
 
     result.TotalTimeUs = Stats::GetSum(result.RunTimesUs);
 
@@ -603,14 +495,8 @@ Vector<BenchmarkResult> BenchmarkRunner::RunCategory(const char* category, UINTN
         if (StrCmp(all[i]->GetCategory(), category) != 0) continue;
         indices[cnt] = i;
         ThreadingMode tm = all[i]->GetThreadingMode();
-        if (tm == ThreadingMode::SingleOnly) {
-            modes[cnt] = RunMode::SingleCore;
-        } else if (tm == ThreadingMode::MultiOnly ||
-                   all[i]->GetDurationClass() == DurationClass::Long) {
-            modes[cnt] = RunMode::MultiCore;
-        } else {
-            modes[cnt] = RunMode::SingleCore;
-        }
+        modes[cnt] = (tm == ThreadingMode::SingleOnly)
+                     ? RunMode::SingleCore : RunMode::MultiCore;
         ++cnt;
     }
 
@@ -642,8 +528,6 @@ Vector<BenchmarkResult> BenchmarkRunner::RunSelected(
         IBenchmark* bm = all[indices[i]];
         if (sCatCtx.Name) sCatCtx.Current = static_cast<UINT32>(i + 1);
         bool isCC = (modes[i] == RunMode::CoreCycle);
-        DrawProgress("Running Benchmarks", bm->GetName(),
-                     i + 1, count, modes[i] == RunMode::MultiCore);
         BenchmarkResult r = isCC
             ? RunCoreCycle(bm, runs, coreCycleAllCores)
             : RunSingle(bm, runs, modes[i] == RunMode::MultiCore);
