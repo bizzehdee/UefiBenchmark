@@ -33,6 +33,8 @@ void  StrCopy(char* dest, const char* src, UINTN maxLen);
 // Integer to decimal ASCII. Returns pointer into a static buffer.
 const char* IntToStr(INT64 value);
 const char* UintToStr(UINT64 value);
+// Integer to zero-padded hex ASCII (digits = number of hex digits to show).
+const char* HexToStr(UINT64 value, int digits);
 
 // Print a narrow string via ConOut (converts to CHAR16 internally)
 void ConPrint(const char* str);

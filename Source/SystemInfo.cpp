@@ -30,6 +30,13 @@ static UINT32 sSpdTRP   = 0;
 static UINT32 sSpdTRAS  = 0;
 static bool   sSpdDdr5  = false;
 
+static SmbusDebugInfo sSmbusDebug = {
+    0xFF, 0xFF, 0, 0,          // Dev, Fn, Vid, Did
+    0, 0, 0,                   // Reg20, Reg40, Reg90
+    0, 0,                      // PmioSmba, IoBase
+    0xFF, 0xFF, 0xFF           // InitHststs, Slot50B0, Slot50Dt
+};
+
 // ── CPUID helpers ────────────────────────────────────────────
 static void CpuidRaw(UINT32 leaf, UINT32 subleaf,
                      UINT32& eax, UINT32& ebx, UINT32& ecx, UINT32& edx) {
@@ -401,6 +408,13 @@ static UINT32 PciCfgRead32Spd(UINT8 dev, UINT8 fn, UINT8 off) {
     __asm__ volatile("inl %1, %0" : "=a"(data) : "Nd"((UINT16)0x0CFC));
     return data;
 }
+// AMD FCH PMIO access — index port 0xCD6, data port 0xCD7
+static UINT8 PmioReadB(UINT8 reg) {
+    IoOutB(0xCD6, reg);
+    IoInB(0x80); // short delay
+    return IoInB(0xCD7);
+}
+
 static void PciCfgWrite32Spd(UINT8 dev, UINT8 fn, UINT8 off, UINT32 val) {
     UINT32 addr = 0x80000000U | ((UINT32)(dev & 0x1F) << 11) |
                   ((UINT32)(fn & 7) << 8) | (off & 0xFC);
@@ -416,12 +430,56 @@ static UINT16 FindSmbusIoBase() {
             UINT32 cls = PciCfgRead32Spd(dev, fn, 0x08);
             if (((cls >> 24) & 0xFF) != 0x0C) continue;
             if (((cls >> 16) & 0xFF) != 0x05) continue;
-            // Ensure I/O space is enabled in PCI command register
+
+            UINT16 vid = (UINT16)(id & 0xFFFF);
+            UINT16 did = (UINT16)(id >> 16);
+
+            // Record the first matching device for diagnostics
+            sSmbusDebug.Dev  = dev;
+            sSmbusDebug.Fn   = fn;
+            sSmbusDebug.Vid  = vid;
+            sSmbusDebug.Did  = did;
+            sSmbusDebug.Reg20 = PciCfgRead32Spd(dev, fn, 0x20);
+            sSmbusDebug.Reg40 = PciCfgRead32Spd(dev, fn, 0x40);
+            sSmbusDebug.Reg90 = PciCfgRead32Spd(dev, fn, 0x90);
+
+            // Enable I/O space in PCI command register
             UINT32 cmdReg = PciCfgRead32Spd(dev, fn, 0x04);
-            if (!(cmdReg & 1)) {
-                PciCfgWrite32Spd(dev, fn, 0x04, cmdReg | 1);
+            if (!(cmdReg & 1)) PciCfgWrite32Spd(dev, fn, 0x04, cmdReg | 1);
+
+            if (vid == 0x8086) {
+                // Intel PCH: HOSTC at 0x40 must have HST_EN (bit 0) set or
+                // the controller silently ignores all host transactions.
+                UINT32 hostc = PciCfgRead32Spd(dev, fn, 0x40);
+                if (!(hostc & 1)) PciCfgWrite32Spd(dev, fn, 0x40, hostc | 1);
+                // SMBA I/O base is BAR4 (config offset 0x20)
+                UINT32 bar = PciCfgRead32Spd(dev, fn, 0x20);
+                if (bar & 1) {
+                    UINT16 ioAddr = (UINT16)(bar & 0xFFFE);
+                    if (ioAddr > 0x0F) return ioAddr;
+                }
+            } else if (vid == 0x1022) {
+                // Older AMD FCH (Hudson-2/Bolton SB8xx/SB9xx): SMBHOSTADDR at
+                // PCI config offset 0x90.
+                UINT16 amdBase = (UINT16)(PciCfgRead32Spd(dev, fn, 0x90) & 0xFFF0);
+                if (amdBase > 0x0F) {
+                    sSmbusDebug.PmioSmba = 0;
+                    return amdBase;
+                }
+                // Read PMIO 0x2C/0x2D for diagnostics only. NOTE: index 0x2C is
+                // the SB800-era SMBus base register; on all Zen FCH (Hudson-2
+                // rev>=0x41 / FCH 0x790b) it does NOT hold the base — Linux
+                // i2c-piix4 switches to smb_en=0x00 there. Reading 0x2C on Zen
+                // yields junk (e.g. 0x0080 == the POST port), so never trust it.
+                UINT16 pmio = (UINT16)PmioReadB(0x2C) | ((UINT16)PmioReadB(0x2D) << 8);
+                sSmbusDebug.PmioSmba = pmio;
+                // The AMD FCH host SMBus I/O base is hardwired to 0x0B00 on every
+                // SB8xx/SB9xx/Bolton/Hudson/Zen FCH. The DIMM SPD EEPROMs live on
+                // this primary bus. Use it directly.
+                return 0x0B00;
             }
-            // Find I/O BAR (bit 0 = 1 indicates I/O space)
+
+            // Generic fallback: scan BAR registers for any I/O BAR
             for (UINT8 b = 0x10; b <= 0x24; b += 4) {
                 UINT32 bar = PciCfgRead32Spd(dev, fn, b);
                 if (!(bar & 1)) continue;
@@ -437,19 +495,19 @@ static void IoDelay() {
     IoInB(0x80); // read from POST port as a short I/O delay
 }
 
-// Reset the SMBus controller — clears stuck HOST_BUSY, error bits, and orphans.
+// Reset the SMBus controller — clears stuck HOST_BUSY without putting any
+// new transaction on the wire (which could re-lock a stuck bus).
 static void ResetSmbusController(UINT16 base) {
-    IoOutB(base, 0xFF);                     // clear all writable status bits
+    IoOutB(base, 0xFF);      // clear all writable status bits
     IoDelay();
-    // Force an abort by writing START-only (no protocol) — controller will
-    // time out and release the bus, clearing HOST_BUSY if it was stuck.
-    IoOutB(base + 2, 0x40);                 // START | 0 (STOP generates automatically)
+    IoOutB(base + 2, 0x02);  // KILL bit: abort the current transaction immediately
     IoDelay();
     for (UINT32 t = 50000; t; --t) {
         if (!(IoInB(base) & 1)) break;
-        IoInB(0x80);                        // delay between polls
+        IoInB(0x80);
     }
-    IoOutB(base, 0xFF);                     // clear any status from the abort
+    IoOutB(base + 2, 0x00);  // clear KILL bit
+    IoOutB(base, 0xFF);      // clear FAILED and any other bits set by KILL
     IoDelay();
 }
 
@@ -478,7 +536,10 @@ static UINT8 ReadSmbByte(UINT16 base, UINT8 addr, UINT8 reg) {
 
 static void DetectSpd() {
     UINT16 base = FindSmbusIoBase();
+    sSmbusDebug.IoBase = base;
     if (!base) return;
+
+    sSmbusDebug.InitHststs = IoInB(base);
 
     // Reset the controller if it's busy (e.g., left over from firmware)
     if (IoInB(base) & 1) {
@@ -493,9 +554,14 @@ static void DetectSpd() {
     // SPD EEPROMs are at SMBus addresses 0x50–0x57 (one per slot)
     for (UINT8 slot = 0x50; slot <= 0x57; ++slot) {
         UINT8 b0 = ReadSmbByte(base, slot, 0);
+        if (slot == 0x50) {
+            sSmbusDebug.Slot50B0 = b0;
+            sSmbusDebug.Slot50Dt = ReadSmbByte(base, slot, 2);
+        }
         if (b0 == 0x00 || b0 == 0xFF) continue;       // no DIMM here
 
-        UINT8 devType = ReadSmbByte(base, slot, 2);
+        UINT8 devType = (slot == 0x50) ? sSmbusDebug.Slot50Dt
+                                       : ReadSmbByte(base, slot, 2);
 
         if (devType == 0x12) {
             // DDR5 SPD (JEDEC SPD for DDR5, rev 1.0)
@@ -533,11 +599,11 @@ static void DetectSpd() {
         else if (devType == 0x0C) {
             // DDR4 SPD (JEDEC SPD4) — all timings in MTB (Medium Timebase) units
             UINT8 tCKmin  = ReadSmbByte(base, slot, 18);  // min cycle time (MTB = 0.125 ns)
-            UINT8 tAAmin  = ReadSmbByte(base, slot, 23);  // CAS Latency min time
-            UINT8 tRCDmin = ReadSmbByte(base, slot, 24);  // RAS-to-CAS delay min
-            UINT8 tRPmin  = ReadSmbByte(base, slot, 25);  // Row Precharge min
-            UINT8 tRASLo  = ReadSmbByte(base, slot, 26);  // tRASmin lower 8 bits
+            UINT8 tAAmin  = ReadSmbByte(base, slot, 24);  // CAS Latency min time
+            UINT8 tRCDmin = ReadSmbByte(base, slot, 25);  // RAS-to-CAS delay min
+            UINT8 tRPmin  = ReadSmbByte(base, slot, 26);  // Row Precharge min
             UINT8 b27     = ReadSmbByte(base, slot, 27);  // [3:0]=tRAS_ext [7:4]=tRC_ext
+            UINT8 tRASLo  = ReadSmbByte(base, slot, 28);  // tRASmin lower 8 bits
 
             if (tCKmin == 0 || tCKmin == 0xFF) continue;
 
@@ -590,6 +656,7 @@ UINT32      GetSpdTRCD()                  { return sSpdTRCD; }
 UINT32      GetSpdTRP()                   { return sSpdTRP; }
 UINT32      GetSpdTRAS()                  { return sSpdTRAS; }
 bool        IsSpdDdr5()                   { return sSpdDdr5; }
+const SmbusDebugInfo& GetSmbusDebug()     { return sSmbusDebug; }
 
 bool HasMpServices() { return sMpAvailable; }
 EFI_MP_SERVICES_PROTOCOL* GetMpServices() { return sMpServices; }

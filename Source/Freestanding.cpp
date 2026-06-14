@@ -147,6 +147,19 @@ const char* UintToStr(UINT64 value) {
     return sIntBuf;
 }
 
+const char* HexToStr(UINT64 value, int digits) {
+    if (digits < 1) digits = 1;
+    if (digits > 16) digits = 16;
+    static char buf[20];
+    const char* hex = "0123456789ABCDEF";
+    for (int i = digits - 1; i >= 0; --i) {
+        buf[i] = hex[value & 0xF];
+        value >>= 4;
+    }
+    buf[digits] = '\0';
+    return buf;
+}
+
 // ── ConOut printing ──────────────────────────────────────────
 void ConPrint(const char* str) {
     if (!gST || !gST->ConOut || !str) return;

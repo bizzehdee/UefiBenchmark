@@ -40,6 +40,23 @@ UINT32 GetSpdTRP();
 UINT32 GetSpdTRAS();
 bool   IsSpdDdr5();   // true when DDR5 DIMMs detected (DDR5 timing bytes read separately)
 
+// SMBus detection diagnostics — populated by DetectSpd(), useful for debug.
+struct SmbusDebugInfo {
+    UINT8  Dev;         // PCI device# of SMBus controller (0xFF = none found)
+    UINT8  Fn;          // PCI function#
+    UINT16 Vid;         // vendor ID (0x8086=Intel, 0x1022=AMD, 0=not found)
+    UINT16 Did;         // device ID
+    UINT32 Reg20;       // PCI cfg offset 0x20 (Intel SMBA / BAR4)
+    UINT32 Reg40;       // PCI cfg offset 0x40 (Intel HOSTC)
+    UINT32 Reg90;       // PCI cfg offset 0x90 (AMD SMBHOSTADDR — older FCH)
+    UINT16 PmioSmba;    // raw PMIO[0x2D:0x2C] AMD SMBus base (Promontory/AM4+)
+    UINT16 IoBase;      // I/O base returned by FindSmbusIoBase (0 = not found)
+    UINT8  InitHststs;  // HSTSTS value read at start of DetectSpd (0xFF = no base)
+    UINT8  Slot50B0;    // ReadSmbByte(0x50, 0) — SPD byte 0 (0xFF = no response)
+    UINT8  Slot50Dt;    // ReadSmbByte(0x50, 2) — device type byte
+};
+const SmbusDebugInfo& GetSmbusDebug();
+
 // MP Services (multi-core) support
 bool HasMpServices();
 EFI_MP_SERVICES_PROTOCOL* GetMpServices();

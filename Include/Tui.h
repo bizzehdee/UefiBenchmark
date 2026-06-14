@@ -20,6 +20,7 @@ private:
     void ShowCategoryResults(const char* category);
     void ShowSystemInfo();
     void ShowAiSuitability();
+    void ShowSmbusDebug();
     void ShowResolutionPicker();
     void ShowThemePicker();
     void ShowCorePicker();
