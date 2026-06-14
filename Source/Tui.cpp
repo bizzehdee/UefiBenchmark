@@ -202,6 +202,7 @@ void Tui::ShowMainMenu() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_UP)
             cursor = (cursor - 1 + totalOpts) % totalOpts;
         else if (key.ScanCode == SCAN_DOWN)
@@ -274,6 +275,7 @@ void Tui::ShowMainMenu() {
                 }
             }
         }
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -433,6 +435,7 @@ void Tui::ShowBenchmarkSelection() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_UP)
             cursor = (cursor - 1 + static_cast<int>(bmCount)) % static_cast<int>(bmCount);
         else if (key.ScanCode == SCAN_DOWN)
@@ -475,6 +478,7 @@ void Tui::ShowBenchmarkSelection() {
             if (count > 0) ShowRunCountPicker(indices, selModes, count);
             return;
         }
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -546,6 +550,7 @@ void Tui::ShowRunCountPicker(const UINTN* indices, const RunMode* modes,
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_UP)
             pickerCursor = (pickerCursor - 1 + pickerRows) % pickerRows;
         else if (key.ScanCode == SCAN_DOWN)
@@ -564,6 +569,7 @@ void Tui::ShowRunCountPicker(const UINTN* indices, const RunMode* modes,
                           coreCycleAllCores);
             return;
         }
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -739,9 +745,11 @@ void Tui::ShowCategoryResults(const char* category) {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_ESC) return;
         if (key.UnicodeChar == '\r' || key.UnicodeChar == '\n') { ShowResults(); return; }
         sCatResultsVp.HandleKey(key, viewRows);
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -942,8 +950,10 @@ void Tui::ShowResults() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_ESC) return;
         sResultsVp.HandleKey(key, viewRows);
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -994,6 +1004,7 @@ void Tui::ShowThemePicker() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_UP)
             cursor = (cursor - 1 + kCount) % kCount;
         else if (key.ScanCode == SCAN_DOWN)
@@ -1004,6 +1015,7 @@ void Tui::ShowThemePicker() {
             Theme::Set(kThemes[cursor].id);
             return; // caller's next Clear()/Present() picks up new colours
         }
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -1067,6 +1079,7 @@ void Tui::ShowResolutionPicker() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_UP)
             cursor = (cursor - 1 + static_cast<int>(modeCount)) % static_cast<int>(modeCount);
         else if (key.ScanCode == SCAN_DOWN)
@@ -1092,6 +1105,7 @@ void Tui::ShowResolutionPicker() {
             }
             return;
         }
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -1199,6 +1213,7 @@ void Tui::ShowCorePicker() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_UP && cursor > 0)
             --cursor;
         else if (key.ScanCode == SCAN_DOWN && cursor < static_cast<int>(apCount) - 1)
@@ -1215,6 +1230,7 @@ void Tui::ShowCorePicker() {
             CoreSelection::SelectOnePerPackage();
         else if (key.ScanCode == SCAN_ESC)
             return;
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -1406,12 +1422,14 @@ void Tui::ShowSystemInfo() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_ESC) return;
         if (key.UnicodeChar == 'a' || key.UnicodeChar == 'A') {
             ShowAiSuitability();
-            continue;
+            break;
         }
         vp.HandleKey(key, viewRows);
+        } while (Renderer::PollKey(&key));
     }
 }
 
@@ -1597,7 +1615,9 @@ void Tui::ShowAiSuitability() {
         Renderer::Present();
 
         EFI_INPUT_KEY key = Renderer::WaitKey();
+        do {
         if (key.ScanCode == SCAN_ESC) return;
         vp.HandleKey(key, viewRows);
+        } while (Renderer::PollKey(&key));
     }
 }

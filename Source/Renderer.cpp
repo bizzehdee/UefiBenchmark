@@ -361,6 +361,11 @@ EFI_INPUT_KEY WaitKey() {
     return key;
 }
 
+bool PollKey(EFI_INPUT_KEY* key) {
+    if (!gST || !gST->ConIn) return false;
+    return gST->ConIn->ReadKeyStroke(gST->ConIn, key) == EFI_SUCCESS;
+}
+
 // ── Pad helper ───────────────────────────────────────────────
 static char sPadBuf[256];
 

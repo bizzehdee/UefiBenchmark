@@ -64,6 +64,9 @@ void TextClear();
 // ── Input ───────────────────────────────────────────────────
 // Block until a key is pressed. Returns scan code + unicode char.
 EFI_INPUT_KEY WaitKey();
+// Non-blocking: fill *key and return true if a key is queued, else false.
+// Use after WaitKey to drain buffered keys before re-rendering.
+bool PollKey(EFI_INPUT_KEY* key);
 // Discard all keys currently queued in the input buffer.
 // Call once when entering a new screen to avoid stale key carry-over.
 void FlushInput();
