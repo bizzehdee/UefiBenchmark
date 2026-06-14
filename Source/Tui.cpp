@@ -1262,7 +1262,13 @@ void Tui::ShowSystemInfo() {
     } else if (SystemInfo::IsSpdDdr5()) {
         VpAddInfo(vp, "Timings (SPD):", "DDR5 (parsed separately)");
     } else {
-        VpAddInfo(vp, "Timings:", "N/A (DDR3/older or SMBus locked)");
+        const char* mt = SystemInfo::GetMemoryType();
+        if (StrCmp(mt, "DDR4") == 0 || StrCmp(mt, "DDR5") == 0 ||
+            StrCmp(mt, "LPDDR") == 0 || StrCmp(mt, "LPDDR3") == 0 ||
+            StrCmp(mt, "LPDDR4") == 0 || StrCmp(mt, "LPDDR4X") == 0)
+            VpAddInfo(vp, "Timings:", "N/A (SMBus locked)");
+        else
+            VpAddInfo(vp, "Timings:", "N/A (DDR3/older or SMBus locked)");
     }
 
     // ── Display & system section ──────────────────────────────────

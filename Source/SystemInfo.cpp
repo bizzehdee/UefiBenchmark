@@ -308,13 +308,14 @@ static void ParseSmbiosTable(const UINT8* start, UINT32 len) {
                 if (sMemType[0] == 'U') { // still "Unknown"
                     UINT8 mt = p[0x12];
                     const char* typeName = nullptr;
-                    if      (mt == 0x1A) typeName = "DDR4";
-                    else if (mt == 0x1B) typeName = "LPDDR3";
+                    if      (mt == 0x18) typeName = "DDR3";
+                    else if (mt == 0x1A) typeName = "DDR4";
+                    else if (mt == 0x1B) typeName = "LPDDR";
+                    else if (mt == 0x1D) typeName = "LPDDR3";
                     else if (mt == 0x1E) typeName = "LPDDR4";
                     else if (mt == 0x1F) typeName = "LPDDR4X";
                     else if (mt == 0x22) typeName = "DDR5";
                     else if (mt == 0x23) typeName = "LPDDR5";
-                    else if (mt == 0x18) typeName = "DDR3";
                     if (typeName) StrCopy(sMemType, typeName, 8);
                 }
 
@@ -400,9 +401,14 @@ static UINT32 PciCfgRead32Spd(UINT8 dev, UINT8 fn, UINT8 off) {
     __asm__ volatile("inl %1, %0" : "=a"(data) : "Nd"((UINT16)0x0CFC));
     return data;
 }
+static void PciCfgWrite32Spd(UINT8 dev, UINT8 fn, UINT8 off, UINT32 val) {
+    UINT32 addr = 0x80000000U | ((UINT32)(dev & 0x1F) << 11) |
+                  ((UINT32)(fn & 7) << 8) | (off & 0xFC);
+    __asm__ volatile("outl %0, %1" : : "a"(addr), "Nd"((UINT16)0x0CF8));
+    __asm__ volatile("outl %0, %1" : : "a"(val), "Nd"((UINT16)0x0CFC));
+}
 
 static UINT16 FindSmbusIoBase() {
-    // Scan bus 0 for an SMBus host controller (PCI class 0x0C, subclass 0x05).
     for (UINT8 dev = 0; dev < 32; ++dev) {
         for (UINT8 fn = 0; fn < 8; ++fn) {
             UINT32 id = PciCfgRead32Spd(dev, fn, 0x00);
@@ -410,7 +416,12 @@ static UINT16 FindSmbusIoBase() {
             UINT32 cls = PciCfgRead32Spd(dev, fn, 0x08);
             if (((cls >> 24) & 0xFF) != 0x0C) continue;
             if (((cls >> 16) & 0xFF) != 0x05) continue;
-            // SMBus found — locate its I/O BAR (bit 0 = I/O type)
+            // Ensure I/O space is enabled in PCI command register
+            UINT32 cmdReg = PciCfgRead32Spd(dev, fn, 0x04);
+            if (!(cmdReg & 1)) {
+                PciCfgWrite32Spd(dev, fn, 0x04, cmdReg | 1);
+            }
+            // Find I/O BAR (bit 0 = 1 indicates I/O space)
             for (UINT8 b = 0x10; b <= 0x24; b += 4) {
                 UINT32 bar = PciCfgRead32Spd(dev, fn, b);
                 if (!(bar & 1)) continue;
@@ -422,15 +433,39 @@ static UINT16 FindSmbusIoBase() {
     return 0;
 }
 
+static void IoDelay() {
+    IoInB(0x80); // read from POST port as a short I/O delay
+}
+
+// Reset the SMBus controller — clears stuck HOST_BUSY, error bits, and orphans.
+static void ResetSmbusController(UINT16 base) {
+    IoOutB(base, 0xFF);                     // clear all writable status bits
+    IoDelay();
+    // Force an abort by writing START-only (no protocol) — controller will
+    // time out and release the bus, clearing HOST_BUSY if it was stuck.
+    IoOutB(base + 2, 0x40);                 // START | 0 (STOP generates automatically)
+    IoDelay();
+    for (UINT32 t = 50000; t; --t) {
+        if (!(IoInB(base) & 1)) break;
+        IoInB(0x80);                        // delay between polls
+    }
+    IoOutB(base, 0xFF);                     // clear any status from the abort
+    IoDelay();
+}
+
 static UINT8 ReadSmbByte(UINT16 base, UINT8 addr, UINT8 reg) {
     // Poll HOST_BUSY (bit 0) until idle
     for (UINT32 t = 100000; t && (IoInB(base) & 1); --t) ;
-    if (IoInB(base) & 1) return 0xFF;             // bus stuck
+    if (IoInB(base) & 1) {                  // bus stuck — try a reset
+        ResetSmbusController(base);
+        if (IoInB(base) & 1) return 0xFF;   // still stuck, give up
+    }
 
-    IoOutB(base,     0x1E);                        // clear status bits
-    IoOutB(base + 4, (UINT8)((addr << 1) | 1));   // slave address + READ bit
-    IoOutB(base + 3, reg);                         // SPD byte offset
-    IoOutB(base + 2, 0x48);                        // START | BYTE_DATA command
+    IoOutB(base,     0x1E);                  // clear INTR & error bits
+    IoOutB(base + 4, (UINT8)((addr << 1) | 1)); // slave address + READ
+    IoOutB(base + 3, reg);                   // SPD byte offset
+    IoOutB(base + 2, 0x48);                  // START | BYTE_DATA command
+    IoDelay();
 
     // Poll for INTR (bit 1) or any error (bits 2-4)
     UINT8 sts = 0;
@@ -444,6 +479,16 @@ static UINT8 ReadSmbByte(UINT16 base, UINT8 addr, UINT8 reg) {
 static void DetectSpd() {
     UINT16 base = FindSmbusIoBase();
     if (!base) return;
+
+    // Reset the controller if it's busy (e.g., left over from firmware)
+    if (IoInB(base) & 1) {
+        ResetSmbusController(base);
+        if (IoInB(base) & 1) return; // still stuck, can't use SMBus
+    } else {
+        // Even if idle, clear any stale error bits
+        IoOutB(base, 0xFF);
+        IoDelay();
+    }
 
     // SPD EEPROMs are at SMBus addresses 0x50–0x57 (one per slot)
     for (UINT8 slot = 0x50; slot <= 0x57; ++slot) {
@@ -485,31 +530,30 @@ static void DetectSpd() {
             sSpdTRAS = CeilDiv5(tRAS, tCK);
             break;
         }
+        else if (devType == 0x0C) {
+            // DDR4 SPD (JEDEC SPD4) — all timings in MTB (Medium Timebase) units
+            UINT8 tCKmin  = ReadSmbByte(base, slot, 18);  // min cycle time (MTB = 0.125 ns)
+            UINT8 tAAmin  = ReadSmbByte(base, slot, 23);  // CAS Latency min time
+            UINT8 tRCDmin = ReadSmbByte(base, slot, 24);  // RAS-to-CAS delay min
+            UINT8 tRPmin  = ReadSmbByte(base, slot, 25);  // Row Precharge min
+            UINT8 tRASLo  = ReadSmbByte(base, slot, 26);  // tRASmin lower 8 bits
+            UINT8 b27     = ReadSmbByte(base, slot, 27);  // [3:0]=tRAS_ext [7:4]=tRC_ext
 
-        if (devType != 0x0C) continue;                 // DDR4: skip non-DDR4
+            if (tCKmin == 0 || tCKmin == 0xFF) continue;
 
-        // DDR4 SPD (JEDEC SPD4) — all timings in MTB (Medium Timebase) units
-        UINT8 tCKmin  = ReadSmbByte(base, slot, 18);  // min cycle time (MTB = 0.125 ns)
-        UINT8 tAAmin  = ReadSmbByte(base, slot, 23);  // CAS Latency min time
-        UINT8 tRCDmin = ReadSmbByte(base, slot, 24);  // RAS-to-CAS delay min
-        UINT8 tRPmin  = ReadSmbByte(base, slot, 25);  // Row Precharge min
-        UINT8 tRASLo  = ReadSmbByte(base, slot, 26);  // tRASmin lower 8 bits
-        UINT8 b27     = ReadSmbByte(base, slot, 27);  // [3:0]=tRAS_ext [7:4]=tRC_ext
+            UINT32 tRAS = ((UINT32)(b27 & 0x0F) << 8) | tRASLo;
 
-        if (tCKmin == 0 || tCKmin == 0xFF) continue;
+            // Cycles = ceil(timing_MTB / tCKmin_MTB)
+            auto CeilDiv = [](UINT32 a, UINT32 b) -> UINT32 {
+                return b ? (a + b - 1) / b : 0;
+            };
 
-        UINT32 tRAS = ((UINT32)(b27 & 0x0F) << 8) | tRASLo;
-
-        // Cycles = ceil(timing_MTB / tCKmin_MTB)
-        auto CeilDiv = [](UINT32 a, UINT32 b) -> UINT32 {
-            return b ? (a + b - 1) / b : 0;
-        };
-
-        sSpdTCL  = CeilDiv((UINT32)tAAmin,  (UINT32)tCKmin);
-        sSpdTRCD = CeilDiv((UINT32)tRCDmin, (UINT32)tCKmin);
-        sSpdTRP  = CeilDiv((UINT32)tRPmin,  (UINT32)tCKmin);
-        sSpdTRAS = CeilDiv(tRAS,             (UINT32)tCKmin);
-        break; // first populated DDR4 DIMM wins
+            sSpdTCL  = CeilDiv((UINT32)tAAmin,  (UINT32)tCKmin);
+            sSpdTRCD = CeilDiv((UINT32)tRCDmin, (UINT32)tCKmin);
+            sSpdTRP  = CeilDiv((UINT32)tRPmin,  (UINT32)tCKmin);
+            sSpdTRAS = CeilDiv(tRAS,             (UINT32)tCKmin);
+            break; // first populated DDR4 DIMM wins
+        }
     }
 }
 
