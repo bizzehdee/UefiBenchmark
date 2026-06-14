@@ -241,32 +241,84 @@ static void DrawLiveProgress(const ProgressReport& r, void* vctx) {
 static void DrawProgress(const char* title, const char* name,
                          UINTN current, UINTN total, bool multiCore) {
     Renderer::Clear();
+    const int cols = static_cast<int>(Renderer::Columns());
+    const int rows = static_cast<int>(Renderer::Rows());
 
-    // In a category run, replace the generic title with "<Category> Suite"
+    // Header
+    Renderer::FillRow(0, Theme::Current().HeaderBorder);
+    Renderer::DrawText(2, 0, "BENCHMARK IN PROGRESS", Theme::Current().HeaderText);
+    Renderer::FillRow(1, Theme::Current().Separator);
+
+    // Suite/title on row 2
     if (sCatCtx.Name) {
         static char catTitle[64];
         int p = ProgAppend(catTitle, 0, sCatCtx.Name);
         p = ProgAppend(catTitle, p, " Suite");
         catTitle[p] = '\0';
-        Renderer::DrawText(2, 1, catTitle, Theme::Current().Accent);
+        Renderer::DrawText(2, 2, catTitle, Theme::Current().TextDim);
     } else {
-        Renderer::DrawText(2, 1, title, Theme::Current().Accent);
+        Renderer::DrawText(2, 2, title, Theme::Current().TextDim);
     }
-    Renderer::DrawText(2, 3, "Progress:", Theme::Current().Text);
 
-    char buf[64];
-    const char* cs = UintToStr(current);
-    int p = 0;
-    for (int i = 0; cs[i]; ++i) buf[p++] = cs[i];
-    buf[p++] = ' '; buf[p++] = '/'; buf[p++] = ' ';
-    const char* ts = UintToStr(total);
-    for (int i = 0; ts[i]; ++i) buf[p++] = ts[i];
-    buf[p] = '\0';
+    // Benchmark name on row 3
+    {
+        static char nb[128];
+        int p = 0;
+        nb[p++] = ' '; nb[p++] = ' ';
+        p = ProgAppend(nb, p, name);
+        nb[p] = '\0';
+        Renderer::DrawText(0, 3, nb, Theme::Current().Accent);
 
-    Renderer::DrawText(12, 3, buf, Theme::Current().Accent);
-    Renderer::DrawText(2, 5, "Current:", Theme::Current().Text);
-    Renderer::DrawText(12, 5, name, Theme::Current().Warning);
-    Renderer::DrawText(2, 7, multiCore ? "Running (multi-core)..." : "Running...", Theme::Current().TextDim);
+        const char* modeStr = multiCore ? "Multi-core" : "Single-core (BSP)";
+        int ml = 0;
+        for (; modeStr[ml]; ++ml) {}
+        Renderer::DrawText(cols - ml - 2, 3, modeStr, Theme::Current().TextDim);
+    }
+
+    // Overall progress bar on row 5
+    {
+        UINTN pct = total > 0 ? ((current - 1) * 100ULL / total) : 0;
+
+        static char bar[80];
+        int p = 0;
+        bar[p++] = ' '; bar[p++] = ' ';
+        bar[p++] = '[';
+        const int W = 32;
+        int filled = (int)(pct * W / 100);
+        for (int i = 0; i < W; ++i) bar[p++] = (i < filled) ? '#' : '.';
+        bar[p++] = ']';
+        bar[p++] = ' ';
+        if (pct >= 100) {
+            bar[p++] = '1'; bar[p++] = '0'; bar[p++] = '0';
+        } else if (pct >= 10) {
+            bar[p++] = ' ';
+            bar[p++] = (char)('0' + pct / 10);
+            bar[p++] = (char)('0' + pct % 10);
+        } else {
+            bar[p++] = ' '; bar[p++] = ' ';
+            bar[p++] = (char)('0' + pct);
+        }
+        bar[p++] = '%';
+        bar[p] = '\0';
+        Renderer::DrawText(0, 5, bar, Theme::Current().CheckMark);
+
+        // "X / Y" count on the right
+        static char cnt[32];
+        p = ProgAppend(cnt, 0, UintToStr(current - 1));
+        p = ProgAppend(cnt, p, " / ");
+        p = ProgAppend(cnt, p, UintToStr(total));
+        cnt[p] = '\0';
+        Renderer::DrawText(cols - p - 2, 5, cnt, Theme::Current().TextDim);
+    }
+
+    Renderer::DrawText(2, 9, "System is working normally.  Please wait...", Theme::Current().TextDim);
+
+    // Footer
+    Renderer::FillRow(rows - 3, Theme::Current().Separator);
+    const char* copy = "(c) 2026 Darren Horrocks | https://github.com/bizzehdee/UefiBenchmark | MIT License";
+    Renderer::DrawTextBg(0, rows - 2, Renderer::Pad(copy, cols), Theme::Current().Footer, Theme::Current().Background);
+    Renderer::DrawTextBg(0, rows - 1, Renderer::Pad("", cols), Theme::Current().TextDim, Theme::Current().Background);
+
     Renderer::Present();
 }
 
@@ -475,8 +527,10 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
 
             if (!isLong) {
                 ProgressReport pr;
-                pr.ElapsedUs = 0;
-                pr.BudgetUs  = 0;
+                UINT64 totalSteps = (UINT64)apCount * runs;
+                UINT64 doneSteps  = (UINT64)c * runs + r;
+                pr.ElapsedUs = doneSteps;
+                pr.BudgetUs  = totalSteps;
                 pr.Score     = 0;
                 pr.Unit      = benchmark->GetUnit();
                 DrawLiveProgress(pr, &pCtx);
