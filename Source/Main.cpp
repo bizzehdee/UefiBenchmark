@@ -38,14 +38,16 @@
 #include "Benchmarks/StressCpuPowerBenchmark.h"
 #include "Benchmarks/StressCpuVerifyBenchmark.h"
 
-// The TUI controller embeds every screen's scroll viewport (~180 KB total).
-// Keep it in static (.bss) storage rather than on EfiMain's stack: a stack
-// frame that large would overflow the UEFI boot stack (and pull in __chkstk).
-// File scope (not a function-local static) avoids a thread-safe init guard
-// (_Init_thread_header), which this freestanding target does not provide —
-// zero-initialisation yields a valid empty controller (empty Vector + zeroed
-// viewports), matching the original file-scope-static viewports.
-static Tui gTui;
+// The TUI controller embeds every screen's scroll viewport (~180 KB total), so
+// it must live in static (.bss) storage, not on EfiMain's stack (a frame that
+// large would overflow the UEFI boot stack / pull in __chkstk).
+//
+// It cannot be a plain `static Tui` global: this freestanding target never runs
+// global constructors (nothing iterates .init_array; EfiMain is the raw entry),
+// so the screens' vtable pointers would stay null and the first virtual call
+// would fault. Instead we reserve raw storage and construct Tui explicitly with
+// placement-new in EfiMain, which runs the constructor (and sets every vtable).
+alignas(Tui) static unsigned char gTuiStorage[sizeof(Tui)];
 
 extern "C" EFI_STATUS EFIAPI EfiMain(
     EFI_HANDLE        ImageHandle,
@@ -241,7 +243,10 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     }
 
     // ── 7. Launch TUI ────────────────────────────────────────
-    gTui.Run();   // file-scope static — see note above
+    // Construct in static storage (see note above) so the constructor runs and
+    // initialises every screen's vtable, without a large stack frame.
+    Tui* tui = new (gTuiStorage) Tui();
+    tui->Run();
 
     return EFI_SUCCESS;
 }
