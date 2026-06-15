@@ -408,20 +408,24 @@ static inline UINT32 MmioRead32(UINT64 addr) {
 }
 
 static void DetectImcTimingsAmd() {
-    // UMC channel bases: ch0=0x50000, ch1=0x150000.
-    // TimingCfgA (base+0x200): CL[5:0], RCDWR[13:8], RCDRD[21:16], RP[29:24]
-    // TimingCfgB (base+0x204): RAS[6:0]
+    // Zen2/Zen3/Zen4 UMC channel bases: ch0=0x50000, ch1=0x150000 (step 0x100000).
+    // Register layout is identical for DDR4 and DDR5 (verified against ZenStates-Core):
+    //   +0x204: CL[5:0], RAS[14:8], RCDRD[21:16], RCDWR[29:24]
+    //   +0x208: RC[7:0], RP[21:16]
+    // NOTE: +0x200 is Cmd2T/GDM/Ratio — reading CL from there yields the clock
+    // ratio (non-zero) while the other fields read garbage, which is why the old
+    // code showed a single bogus value with the rest zero.
     for (UINT8 ch = 0; ch < 2; ++ch) {
         UINT32 base = 0x50000U | ((UINT32)ch << 20);
-        UINT32 t1   = ReadSmn(base + 0x200);
-        UINT32 t2   = ReadSmn(base + 0x204);
-        if (t1 == 0 || t1 == 0xFFFFFFFF) continue;
-        UINT32 cl = t1 & 0x3F;
+        UINT32 t204 = ReadSmn(base + 0x204);
+        UINT32 t208 = ReadSmn(base + 0x208);
+        if (t204 == 0 || t204 == 0xFFFFFFFF) continue;
+        UINT32 cl = t204 & 0x3F;
         if (cl == 0 || cl > 128) continue;
         sSpdTCL  = cl;
-        sSpdTRCD = (t1 >> 16) & 0x3F;  // RCDRD
-        sSpdTRP  = (t1 >> 24) & 0x3F;
-        sSpdTRAS = t2 & 0x7F;
+        sSpdTRAS = (t204 >> 8)  & 0x7F;  // RAS[14:8]
+        sSpdTRCD = (t204 >> 16) & 0x3F;  // RCDRD[21:16]
+        sSpdTRP  = (t208 >> 16) & 0x3F;  // RP[21:16]
         return;
     }
 }
