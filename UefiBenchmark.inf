@@ -23,6 +23,7 @@
   Source/BenchmarkRunner.cpp
   Source/CoreSelection.cpp
   Source/ScrollViewport.cpp
+  Source/SelfCheck.cpp
   Source/Tui.cpp
   Source/Screens/UiHelpers.cpp
   Source/Screens/MainMenuScreen.cpp

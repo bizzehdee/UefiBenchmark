@@ -8,6 +8,7 @@
 #include "Renderer.h"
 #include "BenchmarkRegistry.h"
 #include "CpuFeatures.h"
+#include "SelfCheck.h"
 #include "Tui.h"
 
 // Long CPU benchmarks
@@ -62,6 +63,21 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
 
     // ── 2. Early text output ─────────────────────────────────
     ConPrintLine("UEFI Benchmark Suite - Initialising...");
+
+    // ── 2a. Validate the loaded image ────────────────────────
+    // Sentinels + .text CRC32 (vs the value embedded by tools/patch_selfcrc.py).
+    // Catches accidental corruption (bad media, truncated copy, flaky RAM).
+    {
+        const char* scReason = nullptr;
+        if (!SelfCheck::Verify(&scReason)) {
+            ConPrintLine("");
+            ConPrintLine("*** SELF-CHECK FAILED - the binary may be corrupt ***");
+            ConPrintLine(scReason ? scReason : "unknown");
+            ConPrintLine("Refusing to run. Press any key to exit.");
+            Renderer::WaitKey();
+            return EFI_ERROR_BIT | 1;   // EFI_LOAD_ERROR
+        }
+    }
 
     // ── 3. Initialise graphics ───────────────────────────────
     bool gopOk = Renderer::Init(1024, 768);
@@ -136,7 +152,15 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
         fline[p] = '\0';
         Renderer::DrawText(2, 11, fline, Theme::Current().TextDim);
 
+        bool sbSigned = SelfCheck::SecureBootSigned();
+        Renderer::DrawText(2, 12,
+            sbSigned ? "Secure Boot Signed" : "Secure Boot Unsigned",
+            sbSigned ? Theme::Current().Success : Theme::Current().Error);
+
         Renderer::Present();
+    } else {
+        ConPrintLine(SelfCheck::SecureBootSigned() ? "Secure Boot Signed"
+                                                   : "Secure Boot Unsigned");
     }
 
     // ── 6. Register benchmarks ───────────────────────────────

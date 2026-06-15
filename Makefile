@@ -67,6 +67,15 @@ endif
 SIGN     ?= 1
 SBSIGN   ?= sbsign
 OPENSSL  ?= openssl
+
+# ── Self-check provisioning ───────────────────────────────────
+# After linking, embed a CRC32 of .text into the binary so the app can verify
+# at startup that it loaded intact (see Source/SelfCheck.cpp). Runs before
+# signing. Skipped gracefully if python3 is unavailable (app then falls back to
+# sentinel-only checks). Disable with SELFCRC=0.
+SELFCRC  ?= 1
+PYTHON   ?= python3
+SELFCRC_TOOL := tools/patch_selfcrc.py
 MOKUTIL  ?= mokutil
 KEYDIR   ?= keys
 SB_KEY   ?= $(KEYDIR)/db.key
@@ -104,6 +113,7 @@ SOURCES  = \
 	$(SRCDIR)/BenchmarkRunner.cpp \
 	$(SRCDIR)/CoreSelection.cpp \
 	$(SRCDIR)/ScrollViewport.cpp \
+	$(SRCDIR)/SelfCheck.cpp \
 	$(SRCDIR)/Tui.cpp \
 	$(SCNDIR)/UiHelpers.cpp \
 	$(SCNDIR)/MainMenuScreen.cpp \
@@ -260,6 +270,11 @@ $(TARGET): $(OBJECTS)
 	$(OBJCOPY) -j .text -j .sdata -j .data -j .rodata -j .bss -j .rdata \
 		--target efi-app-x86_64 \
 		$(LINK_OUTPUT) $(TARGET)
+	@if [ "$(SELFCRC)" = "1" ]; then \
+		command -v $(PYTHON) >/dev/null 2>&1 \
+		&& $(PYTHON) $(SELFCRC_TOOL) $(TARGET) \
+		|| echo "  [selfcheck] $(PYTHON) not found - CRC not embedded (sentinel checks only)"; \
+	fi
 	@echo ""
 	@echo "  Built: $(TARGET)"
 	@echo "  Toolchain: $(CXX)"
@@ -267,6 +282,11 @@ $(TARGET): $(OBJECTS)
 else
 $(TARGET): $(OBJECTS)
 	$(LD) $(LDFLAGS) /out:$(TARGET) $(OBJECTS)
+	@if [ "$(SELFCRC)" = "1" ]; then \
+		command -v $(PYTHON) >/dev/null 2>&1 \
+		&& $(PYTHON) $(SELFCRC_TOOL) $(TARGET) \
+		|| echo "  [selfcheck] $(PYTHON) not found - CRC not embedded (sentinel checks only)"; \
+	fi
 	@echo ""
 	@echo "  Built: $(TARGET)"
 	@echo "  Toolchain: $(CXX)"
