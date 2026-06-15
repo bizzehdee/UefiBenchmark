@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            lld \
+            llvm
+
+      - name: Build
+        run: make VIDEO_BLT=1 SIGN=0
+
+      - name: Upload EFI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UefiBenchmark.efi
+          path: Build/UefiBenchmark.efi
+          if-no-files-found: error
