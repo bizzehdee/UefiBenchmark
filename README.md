@@ -279,12 +279,22 @@ Once the certificate is enrolled in your firmware's `db` (or as a MOK), the sign
 
 ## Contributing a New Benchmark Test
 
-New tests are welcome. A benchmark is a small C++ class; long-running ones extend `LongBenchmarkBase` (which provides the progress callback and render locking), while short tests can implement `IBenchmark` directly.
+New tests are welcome. A benchmark is a small C++ class that extends **`LongBenchmarkBase`** (which provides the live progress callback and AP-safe render locking). It declares its identity (name, description, category), how it runs (threading mode), and how it scores (value + unit). Almost everything else has a sensible default you can leave alone.
+
+### Pick your budget source
+
+Time-boxed tests no longer hardcode a duration — they read the user's configured budget from `RunConfig`, which is settable from 1 minute to 24 hours in the app:
+
+- **Performance tests** (CPU / Memory / AI): `RunConfig::GetTestBudgetUs()`
+- **Stress / soak tests**: `RunConfig::GetStressBudgetUs()`
+
+### Header
 
 ```cpp
 // Source/Benchmarks/MyBenchmark.h
 #pragma once
 #include "LongBenchmarkBase.h"
+#include "RunConfig.h"
 
 class MyBenchmark : public LongBenchmarkBase {
 public:
@@ -292,36 +302,52 @@ public:
     const char* GetDescription() const override { return "What it measures"; }
     const char* GetCategory()    const override { return "CPU"; }   // CPU / Memory / AI / Stress
 
-    UINT64      GetBudgetUs() const override { return 180ULL * 1000000; } // 3-minute budget
-    UINT64      GetScore()    const override { return mIter / GetBudgetUs(); }
+    // Multi-core only, single-core only, or user's choice (Either).
+    ThreadingMode GetThreadingMode() const override { return ThreadingMode::Either; }
+
+    // Read the user-configured budget — DON'T hardcode a duration.
+    UINT64      GetBudgetUs() const override { return RunConfig::GetTestBudgetUs(); }
+    UINT64      GetScore()    const override { return mTotalIter / GetBudgetUs(); }
     const char* GetUnit()     const override { return "MOPS"; }
 
-    void PreRun()  override { mIter = 0; }
-    void Run()     override { RunCore(0, 1); }
-    void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
+    void PreRun()  override { mTotalIter = 0; }          // reset accumulator before each run
+    void Run()     override { RunCore(0, 1); }           // single-core entry point
+    void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;  // multi-core entry point
 
 private:
-    volatile UINT64 mIter = 0;
+    volatile UINT64 mTotalIter = 0;
 };
 ```
+
+### Implementation
 
 ```cpp
 // Source/Benchmarks/MyBenchmark.cpp
 #include "MyBenchmark.h"
 #include "TimeBox.h"
 
-void MyBenchmark::RunCore(UINT32, UINT32) {
-    UINT64 local = TimeBox::RunWithProgress(GetBudgetUs(), 100000,
+void MyBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    (void)workerIndex; (void)totalWorkers;   // use these to partition work across cores
+    UINT64 local = TimeBox::RunWithProgress(GetBudgetUs(), /*chunk*/ 100000,
         [](UINT64 n) { /* the work to measure */ },
         [this](UINT64 e, UINT64) { TryReportProgress(e); });
-    __atomic_fetch_add(const_cast<UINT64*>(&mIter), local, __ATOMIC_RELAXED);
+    __atomic_fetch_add(const_cast<UINT64*>(&mTotalIter), local, __ATOMIC_RELAXED);
 }
 ```
 
-Then:
+### Useful optional overrides
 
-1. Register it in `Source/Main.cpp`.
+| Override | Default | Use it to |
+|----------|---------|-----------|
+| `GetThreadingMode()` | `Either` | Force `SingleOnly` or `MultiOnly` if the test only makes sense one way |
+| `IncludeInCategoryScore()` | `true` | Return `false` for pass/fail tests (integrity, stress-verify) so they don't skew the category composite |
+| `GetCategoryWeight()` | `100` | Set a 0–100 relative weight in the category's composite score |
+| `GetStatus()` | `nullptr` | Return a live sub-phase label (e.g. the current test pattern) shown during the run |
+
+### Wire it up
+
+1. Instantiate it and call `BenchmarkRegistry::Register(&myBench)` in `Source/Main.cpp` (next to the other registrations).
 2. Add the `.cpp` to `SOURCES` in the `Makefile`.
 3. Add it to `[Sources]` in `UefiBenchmark.inf`.
 
-The new test (and its category, if new) appears automatically in the main menu. A few rules to keep in mind: code that runs on application processors (`RunCore`) must be pure computation — **no UEFI calls** — and the static registry holds a maximum of 32 benchmarks.
+The new test (and its category, if new) appears automatically in the menus. Two hard rules: code in `RunCore` runs on application processors and must be **pure computation — no UEFI calls** — and the static registry holds a maximum of **32 benchmarks**.
