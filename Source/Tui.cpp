@@ -78,6 +78,14 @@ void Tui::RunPending() {
         mLastResults  = BenchmarkRunner::RunSelected(mPending.indices, mPending.modes,
                             mPending.count, mPending.runs, mPending.coreCycleAllCores);
     }
+
+    // A long multi-core run drives progress rendering from the APs, which can
+    // leave the firmware's console input wedged on some platforms. Reset and
+    // drain ConIn so the results screen is responsive to keys again.
+    if (gST && gST->ConIn) {
+        gST->ConIn->Reset(gST->ConIn, FALSE);
+        Renderer::FlushInput();
+    }
 }
 
 // ── Navigation loop ───────────────────────────────────────────

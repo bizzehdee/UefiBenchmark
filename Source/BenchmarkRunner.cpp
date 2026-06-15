@@ -260,6 +260,49 @@ static void DrawLiveProgress(const ProgressReport& r, void* vctx) {
     Renderer::Present();
 }
 
+// ── BSP-driven AP dispatch helpers ───────────────────────────
+// APs must not call Boot Services (GOP Blt). We dispatch them non-blocking with
+// a completion event, then render from the BSP while they run. These wrap the
+// VOID*-typed boot services with the right signatures.
+
+static EFI_EVENT CreatePollEvent() {
+    using CreateEventFn = EFI_STATUS (EFIAPI*)(UINT32, UINTN, VOID*, VOID*, EFI_EVENT*);
+    auto Create = reinterpret_cast<CreateEventFn>(gBS->CreateEvent);
+    EFI_EVENT evt = nullptr;
+    if (EFI_ERROR(Create(0, 0, nullptr, nullptr, &evt))) return nullptr;  // plain, pollable
+    return evt;
+}
+
+static bool EventSignaled(EFI_EVENT evt) {
+    using CheckEventFn = EFI_STATUS (EFIAPI*)(EFI_EVENT);
+    auto Check = reinterpret_cast<CheckEventFn>(gBS->CheckEvent);
+    return Check(evt) == EFI_SUCCESS;
+}
+
+static void ClosePollEvent(EFI_EVENT evt) {
+    using CloseEventFn = EFI_STATUS (EFIAPI*)(EFI_EVENT);
+    auto Close = reinterpret_cast<CloseEventFn>(gBS->CloseEvent);
+    Close(evt);
+}
+
+// Render live progress from the BSP until `doneEvt` signals (APs finished) or a
+// safety cap elapses. Timer must already be started. Returns elapsed µs.
+static UINT64 BspRenderWhileRunning(IBenchmark* bm, ProgressCtx* pc, EFI_EVENT doneEvt) {
+    const UINT64 cap = bm->GetBudgetUs() + 5000000ULL;  // budget + 5s safety
+    ProgressReport rep = {};
+    rep.BudgetUs = bm->GetBudgetUs();
+    rep.Unit     = bm->GetUnit();
+    while (!EventSignaled(doneEvt)) {
+        rep.ElapsedUs = Timer::ElapsedUs();
+        rep.Score     = bm->GetScore();
+        rep.Status    = bm->GetStatus();
+        DrawLiveProgress(rep, pc);
+        if (rep.ElapsedUs > cap) break;
+        gBS->Stall(150000);  // ~150 ms between BSP renders
+    }
+    return Timer::ElapsedUs();
+}
+
 // ── RunSingle ────────────────────────────────────────────────
 
 BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
@@ -328,26 +371,41 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
             ctx.TotalWorkers = includeBsp ? apCount + 1 : apCount;
             ctx.WorkerIndex  = 0;
 
-            Timer::Start();
+            // APs render nothing (Boot Services are BSP-only); they just run and
+            // publish counters. Dispatch them non-blocking and render from here.
+            benchmark->SetProgressCallback(nullptr, nullptr);
 
-            EFI_STATUS status = mp->StartupAllAPs(
-                mp, ApBenchmarkProc, FALSE, NULL, 0, &ctx, NULL);
+            EFI_EVENT doneEvt = CreatePollEvent();
+            EFI_STATUS status  = (EFI_STATUS)(EFI_ERROR_BIT);
+            if (doneEvt) {
+                Timer::Start();
+                status = mp->StartupAllAPs(mp, ApBenchmarkProc, FALSE, doneEvt, 0, &ctx, NULL);
+            }
 
-            UINT64 elapsed = Timer::ElapsedUs();
-
+            UINT64 elapsed;
             if (EFI_ERROR(status)) {
-                // AP dispatch failed — fall back to BSP-only run
+                // Non-blocking dispatch unavailable/failed — fall back to a
+                // blocking BSP-only run (BSP rendering is safe).
+                if (doneEvt) ClosePollEvent(doneEvt);
+                benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
                 Timer::Start();
                 benchmark->Run();
                 elapsed = Timer::ElapsedUs();
-            } else if (includeBsp) {
-                // BSP sequential phase: BSP runs as the last worker slot
-                pCtx.IsBspPhase = true;
-                benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
-                Timer::Start();
-                benchmark->RunCore(apCount, ctx.TotalWorkers);
-                elapsed += Timer::ElapsedUs();
-                pCtx.IsBspPhase = false;
+            } else {
+                elapsed = BspRenderWhileRunning(benchmark, &pCtx, doneEvt);
+                ClosePollEvent(doneEvt);
+
+                if (includeBsp) {
+                    // BSP sequential phase: BSP runs as the last worker slot and
+                    // renders itself (Boot Services on the BSP are safe).
+                    pCtx.IsBspPhase = true;
+                    benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
+                    Timer::Start();
+                    benchmark->RunCore(apCount, ctx.TotalWorkers);
+                    elapsed += Timer::ElapsedUs();
+                    pCtx.IsBspPhase = false;
+                    benchmark->SetProgressCallback(nullptr, nullptr);
+                }
             }
 
             result.RunTimesUs.PushBack(elapsed);
@@ -375,18 +433,29 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
             ApSingleContext apCtx;
             apCtx.Benchmark = benchmark;
 
-            Timer::Start();
-            bool ranOnAp = false;
+            UINT64 elapsed = 0;
+            bool   ranOnAp = false;
             if (haveAp) {
-                EFI_STATUS st = mp->StartupThisAP(mp, ApSingleProc, apProc,
-                                                  NULL, 0, &apCtx, NULL);
-                ranOnAp = !EFI_ERROR(st);
+                EFI_EVENT doneEvt = CreatePollEvent();
+                if (doneEvt) {
+                    benchmark->SetProgressCallback(nullptr, nullptr);  // BSP renders
+                    Timer::Start();
+                    EFI_STATUS st = mp->StartupThisAP(mp, ApSingleProc, apProc,
+                                                      doneEvt, 0, &apCtx, NULL);
+                    if (!EFI_ERROR(st)) {
+                        elapsed = BspRenderWhileRunning(benchmark, &pCtx, doneEvt);
+                        ranOnAp = true;
+                    }
+                    ClosePollEvent(doneEvt);
+                }
             }
             if (!ranOnAp) {
+                // Fallback: run on the BSP (rendering from the BSP is safe).
+                benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
                 Timer::Start();
-                benchmark->Run();   // fallback: BSP
+                benchmark->Run();
+                elapsed = Timer::ElapsedUs();
             }
-            UINT64 elapsed = Timer::ElapsedUs();
             result.RunTimesUs.PushBack(elapsed);
         }
     }
@@ -468,7 +537,8 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     pCtx.CycleTotalRuns   = static_cast<UINT32>(runs);
     pCtx.CycleCurrentCore = 1;
     pCtx.CycleCurrentRun  = 1;
-    benchmark->SetProgressCallback(DrawLiveProgress, &pCtx);
+    // BSP renders; APs must not call Boot Services.
+    benchmark->SetProgressCallback(nullptr, nullptr);
 
     benchmark->Setup();
 
@@ -491,12 +561,14 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
             pCtx.CycleCurrentRun = static_cast<UINT32>(r + 1);
 
             benchmark->PreRun();
+            EFI_EVENT doneEvt = CreatePollEvent();
+            if (!doneEvt) break;
             Timer::Start();
             EFI_STATUS st = mp->StartupThisAP(
-                mp, ApSingleProc, apList[c], NULL, 0, &apCtx, NULL);
-            UINT64 elapsed = Timer::ElapsedUs();
-
-            if (EFI_ERROR(st)) break;
+                mp, ApSingleProc, apList[c], doneEvt, 0, &apCtx, NULL);
+            if (EFI_ERROR(st)) { ClosePollEvent(doneEvt); break; }
+            UINT64 elapsed = BspRenderWhileRunning(benchmark, &pCtx, doneEvt);
+            ClosePollEvent(doneEvt);
 
             result.RunTimesUs.PushBack(elapsed);
             timeSum += elapsed;

@@ -33,11 +33,12 @@ protected:
     // Call from RunCore after each TimeBox chunk.
     // Acquires trylock, enforces 500 ms minimum gap, then invokes the callback.
     void TryReportProgress(UINT64 elapsedUs) {
-        if (!mProgressFn) return;
-
-        // Publish latest elapsed for ScoreDurationUs() even when a render is
-        // skipped below (trylock contended or rate-limited).
+        // Publish latest elapsed for ScoreDurationUs() unconditionally — even
+        // when no callback is set (BSP-driven rendering: APs only publish here,
+        // they never render) or a render is skipped below (trylock/rate-limit).
         mLastElapsedUs = elapsedUs;
+
+        if (!mProgressFn) return;
 
         // Trylock: skip if another AP is rendering
         UINT32 expected = 0;
