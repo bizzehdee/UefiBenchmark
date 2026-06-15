@@ -29,7 +29,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs = 180ULL * 1000000;
+    static constexpr UINT64 mBudgetUs = 180ULL * US_PER_SECOND;
     volatile UINT64 mTotalBytes = 0;
 };
 
@@ -56,7 +56,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs = 180ULL * 1000000;
+    static constexpr UINT64 mBudgetUs = 180ULL * US_PER_SECOND;
     volatile UINT64 mTotalBytes = 0;
 };
 
@@ -83,6 +83,6 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs = 180ULL * 1000000;
+    static constexpr UINT64 mBudgetUs = 180ULL * US_PER_SECOND;
     volatile UINT64 mTotalBytes = 0;
 };

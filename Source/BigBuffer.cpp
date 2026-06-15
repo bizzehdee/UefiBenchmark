@@ -30,13 +30,13 @@ void BigBuffer::Allocate(UINT32 pctTarget) {
     UINT64 target    = (totalFree / 100ULL) * pctTarget;
 
     // Leave at least 512 MB headroom for firmware / stack / framebuffer
-    constexpr UINT64 HEADROOM = 512ULL * 1024 * 1024;
+    constexpr UINT64 HEADROOM = 512ULL * BYTES_PER_MB;
     if (target + HEADROOM > totalFree)
         target = (totalFree > HEADROOM) ? totalFree - HEADROOM : 0;
 
     UINT64 allocated = 0;
-    UINT64 chunkSize = 1ULL * 1024 * 1024 * 1024; // start at 1 GB
-    constexpr UINT64 MIN_CHUNK = 2ULL * 1024 * 1024; // stop at 2 MB
+    UINT64 chunkSize = 1ULL * BYTES_PER_GB; // start at 1 GB
+    constexpr UINT64 MIN_CHUNK = 2ULL * BYTES_PER_MB; // stop at 2 MB
 
     while (allocated < target && chunkSize >= MIN_CHUNK
            && mCount < MAX_SEGMENTS) {

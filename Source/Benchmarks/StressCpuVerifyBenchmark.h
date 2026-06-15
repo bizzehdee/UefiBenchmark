@@ -4,6 +4,7 @@
 // Vcore, marginal clock, or cache/register corruption. Runs 30 min. 0 errors = stable.
 
 #include "LongBenchmarkBase.h"
+#include "BenchmarkConstants.h"
 
 class StressCpuVerifyBenchmark : public LongBenchmarkBase {
 public:
@@ -27,11 +28,9 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs    = 1800ULL * 1000000; // 30 min
-    static constexpr UINT64 CHAIN_LENGTH = 1000000ULL;         // 1M LCG steps per check
-    static constexpr UINT64 SEED         = 0xDEADBEEFCAFEBABEULL;
-    static constexpr UINT64 LCG_A        = 6364136223846793005ULL;
-    static constexpr UINT64 LCG_C        = 1442695040888963407ULL;
+    static constexpr UINT64 mBudgetUs    = 1800ULL * US_PER_SECOND; // 30 min
+    static constexpr UINT64 CHAIN_LENGTH = 1000000ULL;             // 1M LCG steps per check
+    static constexpr UINT64 SEED         = TEST_PATTERN;
 
     UINT64          mGolden    = 0;
     volatile UINT64 mErrorCount = 0;

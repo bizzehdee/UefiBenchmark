@@ -6,6 +6,7 @@
 
 #include "IBenchmark.h"
 #include "Timer.h"
+#include "BenchmarkConstants.h"
 
 class LongBenchmarkBase : public IBenchmark {
 public:

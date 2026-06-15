@@ -8,7 +8,7 @@
 
 static UINT64 ComputeChain(UINT64 state, UINT64 steps) {
     for (UINT64 i = 0; i < steps; ++i)
-        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        state = state * LCG_KNUTH_A + LCG_KNUTH_C;
     return state;
 }
 

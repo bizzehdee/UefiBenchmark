@@ -26,7 +26,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs  = 1800ULL * 1000000; // 30 min
+    static constexpr UINT64 mBudgetUs  = 1800ULL * US_PER_SECOND; // 30 min
     static constexpr UINT64 CHUNK_SIZE = 100000ULL;
 
     volatile UINT64 mTotalIter = 0;

@@ -31,6 +31,6 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs = 90ULL * 1000000;
+    static constexpr UINT64 mBudgetUs = 90ULL * US_PER_SECOND;
     volatile UINT64 mTotalBytes = 0;
 };

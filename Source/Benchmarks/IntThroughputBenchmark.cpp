@@ -3,11 +3,12 @@
 
 #include "IntThroughputBenchmark.h"
 #include "TimeBox.h"
+#include "BenchmarkConstants.h"
 
 void IntThroughputBenchmark::RunCore(UINT32 /*workerIndex*/, UINT32 /*totalWorkers*/) {
     // LCG multiplier (Knuth); each chain starts with a distinct seed so the
     // compiler cannot merge them into a single dependency chain.
-    constexpr UINT64 M = 6364136223846793005ULL;
+    constexpr UINT64 M = LCG_KNUTH_A;
 
     UINT64 localIter = TimeBox::RunWithProgress(mBudgetUs, CHUNK_SIZE, [](UINT64 n) {
         UINT64 a0 = 1ULL, a1 = 2ULL, a2 = 3ULL, a3 = 4ULL;

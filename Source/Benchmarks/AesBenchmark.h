@@ -26,7 +26,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs  = 180ULL * 1000000;
+    static constexpr UINT64 mBudgetUs  = 180ULL * US_PER_SECOND;
     static constexpr UINT64 CHUNK_SIZE = 1000000ULL;
 
     // AES-128 key schedule (11 round keys × 16 bytes each)

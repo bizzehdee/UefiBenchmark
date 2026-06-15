@@ -190,7 +190,7 @@ static UINT32 CalcCacheKBFromLeaf4(UINT32 /*eax*/, UINT32 ebx, UINT32 ecx) {
     UINT32 partitions = ((ebx >> 12) & 0x3FF) + 1;
     UINT32 ways       = ((ebx >> 22) & 0x3FF) + 1;
     UINT32 sets       = ecx + 1;
-    return (lineSize * partitions * ways * sets) / 1024;
+    return (lineSize * partitions * ways * sets) / BYTES_PER_KB;
 }
 
 static void DetectCpuCacheIntel() {
@@ -397,10 +397,38 @@ static void DetectSmbios() {
 static UINT32 PciCfgRead32Spd(UINT8 dev, UINT8 fn, UINT8 off);
 static void   PciCfgWrite32Spd(UINT8 dev, UINT8 fn, UINT8 off, UINT32 val);
 
+// ── Hardware register/port constants ──────────────────────────
+// x86 PCI config mechanism #1 (CF8/CFC) and chipset access ports/offsets.
+// These mirror fixed hardware ABIs, so they are file-local constants rather
+// than magic numbers scattered through the access routines.
+static constexpr UINT16 PCI_CONFIG_ADDR_PORT = 0x0CF8;       // CM1 address port
+static constexpr UINT16 PCI_CONFIG_DATA_PORT = 0x0CFC;       // CM1 data port
+static constexpr UINT32 PCI_CONFIG_ENABLE    = 0x80000000U;  // CM1 "enable" bit
+static constexpr UINT16 POST_DIAG_PORT       = 0x80;         // POST port — read = short I/O delay
+
+static constexpr UINT16 PCI_VENDOR_INTEL = 0x8086;
+static constexpr UINT16 PCI_VENDOR_AMD   = 0x1022;
+
+static constexpr UINT8  AMD_SMN_INDEX = 0x60;   // SMN index reg at B0:D0:F0
+static constexpr UINT8  AMD_SMN_DATA  = 0x64;   // SMN data reg at B0:D0:F0
+static constexpr UINT16 AMD_PMIO_INDEX_PORT = 0xCD6;  // FCH PMIO index
+static constexpr UINT16 AMD_PMIO_DATA_PORT  = 0xCD7;  // FCH PMIO data
+
+static constexpr UINT8  INTEL_MCHBAR_CFG_LO = 0x48;  // MCHBAR low dword (B0:D0:F0)
+static constexpr UINT8  INTEL_MCHBAR_CFG_HI = 0x4C;  // MCHBAR high dword
+
+static constexpr UINT32 AMD_UMC_CH0_BASE   = 0x50000U;  // UMC channel 0 SMN base
+static constexpr UINT32 AMD_UMC_CH_SHIFT   = 20;        // channel stride = 1<<20 (0x100000)
+static constexpr UINT32 AMD_UMC_TIMING_A   = 0x204;     // CL/RAS/RCDRD/RCDWR
+static constexpr UINT32 AMD_UMC_TIMING_B   = 0x208;     // RC/RP
+
+static constexpr UINT8  SPD_ADDR_FIRST = 0x50;  // SMBus addr of first DIMM SPD EEPROM
+static constexpr UINT8  SPD_ADDR_LAST  = 0x57;  // last (8 slots: 0x50..0x57)
+
 static UINT32 ReadSmn(UINT32 addr) {
     // AMD SMN index/data registers live at the root complex (B0:D0:F0), not D18.
-    PciCfgWrite32Spd(0, 0, 0x60, addr);
-    return PciCfgRead32Spd(0, 0, 0x64);
+    PciCfgWrite32Spd(0, 0, AMD_SMN_INDEX, addr);
+    return PciCfgRead32Spd(0, 0, AMD_SMN_DATA);
 }
 
 static inline UINT32 MmioRead32(UINT64 addr) {
@@ -416,9 +444,9 @@ static void DetectImcTimingsAmd() {
     // ratio (non-zero) while the other fields read garbage, which is why the old
     // code showed a single bogus value with the rest zero.
     for (UINT8 ch = 0; ch < 2; ++ch) {
-        UINT32 base = 0x50000U | ((UINT32)ch << 20);
-        UINT32 t204 = ReadSmn(base + 0x204);
-        UINT32 t208 = ReadSmn(base + 0x208);
+        UINT32 base = AMD_UMC_CH0_BASE | ((UINT32)ch << AMD_UMC_CH_SHIFT);
+        UINT32 t204 = ReadSmn(base + AMD_UMC_TIMING_A);
+        UINT32 t208 = ReadSmn(base + AMD_UMC_TIMING_B);
         if (t204 == 0 || t204 == 0xFFFFFFFF) continue;
         UINT32 cl = t204 & 0x3F;
         if (cl == 0 || cl > 128) continue;
@@ -464,9 +492,9 @@ static void DetectImcTimingsIntelAdl(UINT64 mchbar) {
 
 static void DetectImcTimingsIntel() {
     // MCHBAR base is a 64-bit value at PCI B0:D0:F0 cfg offsets 0x48/0x4C.
-    UINT32 mchLo = PciCfgRead32Spd(0, 0, 0x48);
-    UINT32 mchHi = PciCfgRead32Spd(0, 0, 0x4C);
-    if (!(mchLo & 1)) PciCfgWrite32Spd(0, 0, 0x48, mchLo | 1);
+    UINT32 mchLo = PciCfgRead32Spd(0, 0, INTEL_MCHBAR_CFG_LO);
+    UINT32 mchHi = PciCfgRead32Spd(0, 0, INTEL_MCHBAR_CFG_HI);
+    if (!(mchLo & 1)) PciCfgWrite32Spd(0, 0, INTEL_MCHBAR_CFG_LO, mchLo | 1);
     UINT64 mchbar = ((UINT64)mchHi << 32) | (mchLo & ~(UINT64)1);
     if (!mchbar) return;
 
@@ -500,25 +528,25 @@ static UINT8 IoInB(UINT16 port) {
     return v;
 }
 static UINT32 PciCfgRead32Spd(UINT8 dev, UINT8 fn, UINT8 off) {
-    UINT32 addr = 0x80000000U | ((UINT32)(dev & 0x1F) << 11) |
+    UINT32 addr = PCI_CONFIG_ENABLE | ((UINT32)(dev & 0x1F) << 11) |
                   ((UINT32)(fn & 7) << 8) | (off & 0xFC);
-    __asm__ volatile("outl %0, %1" : : "a"(addr), "Nd"((UINT16)0x0CF8));
+    __asm__ volatile("outl %0, %1" : : "a"(addr), "Nd"(PCI_CONFIG_ADDR_PORT));
     UINT32 data;
-    __asm__ volatile("inl %1, %0" : "=a"(data) : "Nd"((UINT16)0x0CFC));
+    __asm__ volatile("inl %1, %0" : "=a"(data) : "Nd"(PCI_CONFIG_DATA_PORT));
     return data;
 }
 // AMD FCH PMIO access — index port 0xCD6, data port 0xCD7
 static UINT8 PmioReadB(UINT8 reg) {
-    IoOutB(0xCD6, reg);
-    IoInB(0x80); // short delay
-    return IoInB(0xCD7);
+    IoOutB(AMD_PMIO_INDEX_PORT, reg);
+    IoInB(POST_DIAG_PORT); // short delay
+    return IoInB(AMD_PMIO_DATA_PORT);
 }
 
 static void PciCfgWrite32Spd(UINT8 dev, UINT8 fn, UINT8 off, UINT32 val) {
-    UINT32 addr = 0x80000000U | ((UINT32)(dev & 0x1F) << 11) |
+    UINT32 addr = PCI_CONFIG_ENABLE | ((UINT32)(dev & 0x1F) << 11) |
                   ((UINT32)(fn & 7) << 8) | (off & 0xFC);
-    __asm__ volatile("outl %0, %1" : : "a"(addr), "Nd"((UINT16)0x0CF8));
-    __asm__ volatile("outl %0, %1" : : "a"(val), "Nd"((UINT16)0x0CFC));
+    __asm__ volatile("outl %0, %1" : : "a"(addr), "Nd"(PCI_CONFIG_ADDR_PORT));
+    __asm__ volatile("outl %0, %1" : : "a"(val), "Nd"(PCI_CONFIG_DATA_PORT));
 }
 
 // Returns the number of SMBus I/O bases found (up to maxOut).
@@ -550,7 +578,7 @@ static UINT8 FindSmbusIoBases(UINT16 out[], UINT8 maxOut) {
             UINT32 cmdReg = PciCfgRead32Spd(dev, fn, 0x04);
             if (!(cmdReg & 1)) PciCfgWrite32Spd(dev, fn, 0x04, cmdReg | 1);
 
-            if (vid == 0x8086) {
+            if (vid == PCI_VENDOR_INTEL) {
                 // Intel PCH: HOSTC at 0x40 must have HST_EN (bit 0) set or
                 // the controller silently ignores all host transactions.
                 UINT32 hostc = PciCfgRead32Spd(dev, fn, 0x40);
@@ -565,7 +593,7 @@ static UINT8 FindSmbusIoBases(UINT16 out[], UINT8 maxOut) {
                         return count;
                     }
                 }
-            } else if (vid == 0x1022) {
+            } else if (vid == PCI_VENDOR_AMD) {
                 // Older AMD FCH (Hudson-2/Bolton SB8xx/SB9xx): SMBHOSTADDR at
                 // PCI config offset 0x90.
                 UINT16 amdBase = (UINT16)(PciCfgRead32Spd(dev, fn, 0x90) & 0xFFF0);
@@ -602,7 +630,7 @@ static UINT8 FindSmbusIoBases(UINT16 out[], UINT8 maxOut) {
 }
 
 static void IoDelay() {
-    IoInB(0x80); // read from POST port as a short I/O delay
+    IoInB(POST_DIAG_PORT); // read from POST port as a short I/O delay
 }
 
 // Reset the SMBus controller — clears stuck HOST_BUSY without putting any
@@ -617,14 +645,14 @@ static void ResetSmbusController(UINT16 base) {
         IoDelay();
         for (UINT32 t = 50000; t; --t) {
             if (!(IoInB(base) & 1)) break;
-            IoInB(0x80);
+            IoInB(POST_DIAG_PORT);
         }
         IoOutB(base + 2, 0x00);  // clear KILL bit
         IoOutB(base, 0xFF);      // clear FAILED and any bits set by KILL
     } else {
         for (UINT32 t = 50000; t; --t) {
             if (!(IoInB(base) & 1)) break;
-            IoInB(0x80);
+            IoInB(POST_DIAG_PORT);
         }
         IoOutB(base, 0xFF);
     }
@@ -656,16 +684,16 @@ static UINT8 ReadSmbByte(UINT16 base, UINT8 addr, UINT8 reg) {
 
 static bool ScanSpdBus(UINT16 base) {
     // SPD EEPROMs are at SMBus addresses 0x50–0x57 (one per slot)
-    for (UINT8 slot = 0x50; slot <= 0x57; ++slot) {
+    for (UINT8 slot = SPD_ADDR_FIRST; slot <= SPD_ADDR_LAST; ++slot) {
         UINT8 b0 = ReadSmbByte(base, slot, 0);
-        if (slot == 0x50) {
+        if (slot == SPD_ADDR_FIRST) {
             sSmbusDebug.Slot50B0 = b0;
             sSmbusDebug.Slot50Dt = ReadSmbByte(base, slot, 2);
         }
         if (b0 == 0x00 || b0 == 0xFF) continue;       // no DIMM here
 
-        UINT8 devType = (slot == 0x50) ? sSmbusDebug.Slot50Dt
-                                       : ReadSmbByte(base, slot, 2);
+        UINT8 devType = (slot == SPD_ADDR_FIRST) ? sSmbusDebug.Slot50Dt
+                                                 : ReadSmbByte(base, slot, 2);
 
         if (devType == 0x12) {
             // DDR5 SPD (JEDEC SPD for DDR5, rev 1.0)
@@ -774,7 +802,7 @@ UINT32      GetL1InstCacheKB() { return sL1InstCacheKB; }
 UINT32      GetL2CacheKB()     { return sL2CacheKB; }
 UINT32      GetL3CacheKB()     { return sL3CacheKB; }
 UINT64      GetTotalMemoryBytes() { return sTotalMem; }
-UINT64      GetTotalMemoryMB()    { return sTotalMem / (1024 * 1024); }
+UINT64      GetTotalMemoryMB()    { return sTotalMem / BYTES_PER_MB; }
 UINT32      GetMemorySpeedMHz()            { return sMemSpeedMHz; }
 UINT32      GetMemoryConfiguredSpeedMHz()  { return sMemConfigSpeed; }
 UINT32      GetMemoryChannelCount()        { return sMemChannelCount; }

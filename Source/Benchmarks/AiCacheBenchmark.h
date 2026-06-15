@@ -32,14 +32,14 @@ public:
     void Run()      override;
 
 private:
-    static constexpr UINT64 mBudgetUs = 90ULL * 1000000;
+    static constexpr UINT64 mBudgetUs = 90ULL * US_PER_SECOND;
     static constexpr UINT64 kChunk    = 4096ULL; // accesses per chain per iteration
 
     // Working-set sizes (slots of sizeof(UINT64) = 8 bytes)
-    static constexpr UINT64 kL1Slots   =  16ULL * 1024 / 8;   //  16 KB
-    static constexpr UINT64 kL2Slots   = 256ULL * 1024 / 8;   // 256 KB
-    static constexpr UINT64 kL3Slots   =   4ULL * 1024 * 1024 / 8;  //  4 MB
-    static constexpr UINT64 kDramSlots =  32ULL * 1024 * 1024 / 8;  // 32 MB
+    static constexpr UINT64 kL1Slots   =  16ULL * BYTES_PER_KB / 8;   //  16 KB
+    static constexpr UINT64 kL2Slots   = 256ULL * BYTES_PER_KB / 8;   // 256 KB
+    static constexpr UINT64 kL3Slots   =   4ULL * BYTES_PER_MB / 8;  //  4 MB
+    static constexpr UINT64 kDramSlots =  32ULL * BYTES_PER_MB / 8;  // 32 MB
 
     // Each slot stores the address of the next slot (pointer-chase)
     UINT64* mL1   = nullptr;

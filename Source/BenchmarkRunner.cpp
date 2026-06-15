@@ -8,6 +8,7 @@
 #include "Renderer.h"
 #include "SystemInfo.h"
 #include "Freestanding.h"
+#include "BenchmarkConstants.h"
 
 // ── AP dispatch contexts ─────────────────────────────────────
 
@@ -79,7 +80,7 @@ static int ProgAppend(char* buf, int pos, const char* s) {
 }
 
 static void FmtMinSec(UINT64 us, char* out) {
-    UINT64 s = us / 1000000ULL;
+    UINT64 s = us / US_PER_SECOND;
     UINT64 m = s / 60;
     s = s % 60;
     int p = ProgAppend(out, 0, UintToStr(m));

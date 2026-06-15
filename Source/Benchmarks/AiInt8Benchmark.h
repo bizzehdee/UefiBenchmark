@@ -32,7 +32,7 @@ public:
     static constexpr int MAX_WORKERS = 32;
 
 private:
-    static constexpr UINT64 mBudgetUs  = 90ULL * 1000000;
+    static constexpr UINT64 mBudgetUs  = 90ULL * US_PER_SECOND;
     static constexpr UINT64 CHUNK_SIZE = 50ULL;  // GEMMs per TimeBox chunk
 
     static INT8  sA[MAX_WORKERS][kN * kN];

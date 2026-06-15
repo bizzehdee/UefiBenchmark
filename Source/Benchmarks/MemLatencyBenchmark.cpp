@@ -5,6 +5,7 @@
 
 #include "MemLatencyBenchmark.h"
 #include "TimeBox.h"
+#include "BenchmarkConstants.h"
 
 void MemLatencyBenchmark::Setup() {
     BigBuffer::AddRef();
@@ -20,8 +21,8 @@ void MemLatencyBenchmark::Setup() {
 
     // LCG parameters (Knuth). Full-period for any modulus = power of 2:
     //   a ≡ 1 (mod 4), c is odd
-    const UINT64 a    = 6364136223846793005ULL;
-    const UINT64 c    = 1442695040888963407ULL;
+    const UINT64 a    = LCG_KNUTH_A;
+    const UINT64 c    = LCG_KNUTH_C;
     const UINT64 mask = N - 1ULL;
 
     // Sequential write: slot[i] → address of slot[(i*a+c) & mask].

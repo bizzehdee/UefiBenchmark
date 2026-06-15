@@ -22,7 +22,7 @@ public:
     void Run() override;
 
 private:
-    static constexpr UINT64 mBudgetUs  = 120ULL * 1000000;
+    static constexpr UINT64 mBudgetUs  = 120ULL * US_PER_SECOND;
     static constexpr UINT64 CHUNK_SIZE = 1000000ULL;
     UINT64 mTotalIter = 0;
 };

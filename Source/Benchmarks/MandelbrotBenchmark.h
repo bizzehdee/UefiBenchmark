@@ -23,7 +23,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs   = 180ULL * 1000000;
+    static constexpr UINT64 mBudgetUs   = 180ULL * US_PER_SECOND;
     static constexpr UINT64 CHUNK_PIXELS = 4096;  // pixels per chunk call
     static constexpr int    GRID_W = 512, GRID_H = 512; // fixed grid
     static constexpr int    MAX_ITER = 256;

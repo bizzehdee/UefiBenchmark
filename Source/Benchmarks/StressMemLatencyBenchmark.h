@@ -29,7 +29,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs = 1800ULL * 1000000; // 30 min
+    static constexpr UINT64 mBudgetUs = 1800ULL * US_PER_SECOND; // 30 min
     static constexpr UINT64 MAGIC     = 0xFEEDFACEDEADC0DEULL;
     // 64 KB stride: skips many DRAM pages per access, maximising row activations
     static constexpr UINT64 STRIDE    = 65536;

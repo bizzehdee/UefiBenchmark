@@ -26,7 +26,7 @@ public:
     void RunCore(UINT32 workerIndex, UINT32 totalWorkers) override;
 
 private:
-    static constexpr UINT64 mBudgetUs  = 150ULL * 1000000;
+    static constexpr UINT64 mBudgetUs  = 150ULL * US_PER_SECOND;
     static constexpr UINTN  BUF_BYTES  = 4096;   // 4 KB — stays in L1
     static constexpr UINT64 CHUNK_SIZE = 1000000ULL;
 

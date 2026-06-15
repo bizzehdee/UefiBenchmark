@@ -39,6 +39,11 @@ typedef void                VOID;
 #define FALSE 0
 #define NULL  nullptr
 
+// ── Binary byte-size units ───────────────────────────────────
+static constexpr UINT64 BYTES_PER_KB = 1024ULL;
+static constexpr UINT64 BYTES_PER_MB = 1024ULL * 1024ULL;
+static constexpr UINT64 BYTES_PER_GB = 1024ULL * 1024ULL * 1024ULL;
+
 // ── EFI_STATUS ───────────────────────────────────────────────
 typedef UINTN EFI_STATUS;
 

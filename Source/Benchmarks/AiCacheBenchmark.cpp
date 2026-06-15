@@ -5,17 +5,14 @@
 
 #include "AiCacheBenchmark.h"
 #include "Freestanding.h"  // operator new[]/delete[]
-
-// LCG full-period parameters (Knuth): a≡1(mod4), c odd, modulus = power of 2
-static constexpr UINT64 kLcgA = 6364136223846793005ULL;
-static constexpr UINT64 kLcgC = 1442695040888963407ULL;
+#include "BenchmarkConstants.h"
 
 void AiCacheBenchmark::BuildChain(UINT64* buf, UINT64 n) {
     // slot[i] = address of slot[(i*a + c) & (n-1)].
     // Full-period LCG visits every slot exactly once, creating a single Hamiltonian cycle.
     const UINT64 mask = n - 1ULL;
     for (UINT64 i = 0; i < n; ++i) {
-        UINT64 next = (i * kLcgA + kLcgC) & mask;
+        UINT64 next = (i * LCG_KNUTH_A + LCG_KNUTH_C) & mask;
         buf[i] = reinterpret_cast<UINT64>(&buf[next]);
     }
 }
