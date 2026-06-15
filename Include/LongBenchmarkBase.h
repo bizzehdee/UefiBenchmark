@@ -47,6 +47,7 @@ protected:
         r.BudgetUs  = GetBudgetUs();
         r.Score     = GetScore();
         r.Unit      = GetUnit();
+        r.Status    = GetStatus();
         mProgressFn(r, mProgressCtx);
 
         __atomic_store_n(&mRenderLock, 0U, __ATOMIC_RELEASE);

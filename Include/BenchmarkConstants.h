@@ -15,5 +15,12 @@ static constexpr UINT64 US_PER_SECOND = 1000000ULL;
 static constexpr UINT64 LCG_KNUTH_A = 6364136223846793005ULL;
 static constexpr UINT64 LCG_KNUTH_C = 1442695040888963407ULL;
 
-// Address-encoded test pattern XORed into memory during stress soaks.
-static constexpr UINT64 TEST_PATTERN = 0xDEADBEEFCAFEBABEULL;
+// Stress-test bit patterns. Distinct patterns exercise different bit-transition
+// failure modes (all-zero, all-one, both alternating phases, walking nibbles,
+// and a mixed pattern). TEST_PATTERN is also XORed into memory during soaks.
+static constexpr UINT64 PATTERN_ZEROS   = 0x0000000000000000ULL;
+static constexpr UINT64 PATTERN_ONES    = 0xFFFFFFFFFFFFFFFFULL;
+static constexpr UINT64 PATTERN_ALT_AA  = 0xAAAAAAAAAAAAAAAAULL;
+static constexpr UINT64 PATTERN_ALT_55  = 0x5555555555555555ULL;
+static constexpr UINT64 PATTERN_WALKING = 0x0123456789ABCDEFULL;
+static constexpr UINT64 TEST_PATTERN    = 0xDEADBEEFCAFEBABEULL;

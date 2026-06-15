@@ -21,6 +21,7 @@ struct ProgressReport {
     UINT64      BudgetUs;
     UINT64      Score;
     const char* Unit;
+    const char* Status;  // optional sub-phase label (e.g. current test pattern); null = none
 };
 
 using ProgressFn = void (*)(const ProgressReport& report, void* ctx);
@@ -37,6 +38,10 @@ public:
     // GetScore() returns the result of the most recent run.
     virtual UINT64      GetScore() const { return 0; }
     virtual const char* GetUnit()  const { return ""; }
+
+    // Optional live sub-phase label shown during long runs (e.g. which test
+    // pattern is currently being verified). Null = nothing extra to show.
+    virtual const char* GetStatus() const { return nullptr; }
 
     // Return false for pass/fail tests (e.g. integrity) so they don't skew
     // the category composite score.

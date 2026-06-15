@@ -224,6 +224,17 @@ static void DrawLiveProgress(const ProgressReport& r, void* vctx) {
         Renderer::DrawText(0, 7, sb, Theme::Current().Text);
     }
 
+    // Optional sub-phase status (e.g. current test pattern) on row 8
+    if (r.Status) {
+        static char st[96];
+        int p = 0;
+        st[p++] = ' '; st[p++] = ' ';
+        p = ProgAppend(st, p, "Testing: ");
+        p = ProgAppend(st, p, r.Status);
+        st[p] = '\0';
+        Renderer::DrawText(0, 8, st, Theme::Current().Accent);
+    }
+
     // Reassurance (row 9 used by core-cycle info when active, so shift to row 11 then)
     int reassureRow = pc->IsCoreCycle ? 11 : 9;
     Renderer::DrawText(2, reassureRow, "System is working normally.  Please wait...", Theme::Current().TextDim);
