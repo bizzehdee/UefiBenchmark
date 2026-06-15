@@ -24,6 +24,18 @@
   Source/CoreSelection.cpp
   Source/ScrollViewport.cpp
   Source/Tui.cpp
+  Source/Screens/UiHelpers.cpp
+  Source/Screens/MainMenuScreen.cpp
+  Source/Screens/BenchmarkSelectionScreen.cpp
+  Source/Screens/RunCountPickerScreen.cpp
+  Source/Screens/ResultsScreen.cpp
+  Source/Screens/CategoryResultsScreen.cpp
+  Source/Screens/SystemInfoScreen.cpp
+  Source/Screens/AiSuitabilityScreen.cpp
+  Source/Screens/SmbusDebugScreen.cpp
+  Source/Screens/ResolutionPickerScreen.cpp
+  Source/Screens/ThemePickerScreen.cpp
+  Source/Screens/CorePickerScreen.cpp
   Source/CpuFeatures.cpp
   Source/BigBuffer.cpp
   Source/VideoEngine.cpp
