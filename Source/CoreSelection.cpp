@@ -5,7 +5,7 @@ namespace CoreSelection {
 
 static ApInfo sAps[MAX_APS];
 static UINT32 sCount = 0;
-static bool   sIncludeBsp = true;
+static bool   sIncludeBsp = false; // by default, BSD runs the EFI application, so we don't include it in the selection
 
 void Init() {
     sCount = 0;
