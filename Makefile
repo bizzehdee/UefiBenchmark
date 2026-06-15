@@ -157,6 +157,7 @@ DEPENDS  = $(OBJECTS:.o=.d)
 
 # ── Compiler flags ────────────────────────────────────────────
 CXXFLAGS = -std=c++17 \
+           -O2 \
            $(CXX_TARGET_FLAGS) \
            -ffreestanding \
            -fno-exceptions \
@@ -361,30 +362,13 @@ enroll-info:
 	@echo "  cert into 'db' via the firmware setup UI or virt-fw-vars."
 	@echo ""
 
-# ── Per-file ISA overrides ────────────────────────────────────
-# Only these files get the extended ISA flags; all other files remain SSE2-only
-# so that AVX/AES instructions cannot appear before EnableAvxState() is called.
-
-$(BUILDDIR)/VideoEngine.o: $(SRCDIR)/VideoEngine.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -mavx2 -c -o $@ $<
-
-$(BUILDDIR)/FpVectorBenchmark.o: $(BMDIR)/FpVectorBenchmark.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -mavx2 -mfma -c -o $@ $<
-
-$(BUILDDIR)/AesBenchmark.o: $(BMDIR)/AesBenchmark.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -maes -c -o $@ $<
-
-$(BUILDDIR)/HashBenchmark.o: $(BMDIR)/HashBenchmark.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -msse4.2 -c -o $@ $<
-
-$(BUILDDIR)/StressCpuPowerBenchmark.o: $(BMDIR)/StressCpuPowerBenchmark.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -mavx2 -mfma -c -o $@ $<
-
-$(BUILDDIR)/AiInt8Benchmark.o: $(BMDIR)/AiInt8Benchmark.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -mavx2 -c -o $@ $<
-
-$(BUILDDIR)/AiInt4Benchmark.o: $(BMDIR)/AiInt4Benchmark.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -mavx2 -c -o $@ $<
+# ── Per-file ISA handling ─────────────────────────────────────
+# No global per-file -m<isa> flags. Every SIMD kernel carries its own
+# __attribute__((target(...))), enabling the ISA for that function only. This
+# keeps all other code — and -O2 auto-vectorization — at the SSE2 baseline, so
+# AVX/AES instructions can never be emitted before EnableAvxState() is called.
+# (Global -mavx2 would let -O2 auto-vectorize ordinary loops into AVX, faulting
+# on cores where the OS/firmware has not yet enabled AVX state.)
 
 # Include auto-generated header dependency files (.d)
 -include $(DEPENDS)

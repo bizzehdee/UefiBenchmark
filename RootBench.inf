@@ -76,8 +76,8 @@
   gEfiMpServiceProtocolGuid
 
 [BuildOptions]
-  GCC:*_*_X64_CC_FLAGS   = -std=c++17 -fno-exceptions -fno-rtti -fno-stack-protector -IInclude -ISource
+  GCC:*_*_X64_CC_FLAGS   = -std=c++17 -O2 -fno-exceptions -fno-rtti -fno-stack-protector -IInclude -ISource
   MSFT:*_*_X64_CC_FLAGS  = /std:c++17 /GR- /EHsc- /IInclude /ISource
-  # Per-file ISA flags for SIMD/crypto benchmarks (EDK II does not support per-file flags
-  # directly; use the global flags here for EDK II builds, but restrict them in Makefile builds)
-  GCC:*_*_X64_CC_FLAGS   = -mavx2 -mfma -maes -msse4.2
+  # No global -m<isa> flags: each SIMD kernel carries __attribute__((target(...))),
+  # enabling the ISA per-function only. This keeps -O2 auto-vectorization at the SSE2
+  # baseline everywhere else, so AVX/AES is never emitted before EnableAvxState().

@@ -74,16 +74,20 @@ void AiInt8Benchmark::RunCore(UINT32 workerIndex, UINT32 /*totalWorkers*/) {
     if (useAvx2) {
         TimeBox::RunWithProgress(GetBudgetUs(), CHUNK_SIZE,
             [this, A, BT, C](UINT64 n) {
-                for (UINT64 k = 0; k < n; ++k)
+                for (UINT64 k = 0; k < n; ++k) {
                     GemmInt8_Avx2(A, BT, C, kN);
+                    __asm__ volatile("" : : : "memory");  // each GEMM must run (defeat LICM/DSE)
+                }
                 __atomic_fetch_add(const_cast<UINT64*>(&mTotalOps), n * MACS_PER_GEMM, __ATOMIC_RELAXED);
             },
             [this](UINT64 e, UINT64) { TryReportProgress(e); });
     } else {
         TimeBox::RunWithProgress(GetBudgetUs(), CHUNK_SIZE,
             [this, A, BT, C](UINT64 n) {
-                for (UINT64 k = 0; k < n; ++k)
+                for (UINT64 k = 0; k < n; ++k) {
                     GemmInt8_Scalar(A, BT, C, kN);
+                    __asm__ volatile("" : : : "memory");  // each GEMM must run (defeat LICM/DSE)
+                }
                 __atomic_fetch_add(const_cast<UINT64*>(&mTotalOps), n * MACS_PER_GEMM, __ATOMIC_RELAXED);
             },
             [this](UINT64 e, UINT64) { TryReportProgress(e); });
