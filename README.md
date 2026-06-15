@@ -2,6 +2,45 @@
 
 A freestanding C++ UEFI application that benchmarks CPU, memory, and AI readiness — and stress-tests overclocked systems — directly on bare metal, with no operating system required.
 
+## How to Use
+
+Grab a prebuilt `.efi` or `.iso` (or [build it yourself](#building)), then boot it one of these ways:
+
+### Try it in QEMU (no hardware needed)
+
+```bash
+make qemu
+```
+
+Builds a FAT32 disk image and boots it with OVMF firmware — the fastest way to see the suite running.
+
+### Boot from a USB stick (`.efi`)
+
+1. Format a USB drive as **FAT32**.
+2. Copy the application to `EFI/BOOT/BOOTX64.EFI` on the drive (the path UEFI looks for automatically):
+
+   ```
+   <USB>/EFI/BOOT/BOOTX64.EFI   <- UefiBenchmark.efi renamed
+   ```
+
+3. Reboot, open your firmware boot menu (usually **F12 / F11 / Esc / Del**), and pick the USB device.
+4. Make sure **Secure Boot is disabled** — the app is unsigned.
+
+### Boot with Ventoy (`.iso` or `.efi`)
+
+[Ventoy](https://www.ventoy.net/) lets you drop boot files straight onto a USB stick with no reformatting:
+
+1. Install Ventoy onto your USB drive (one-time setup).
+2. Copy either file to the Ventoy partition:
+   - **ISO:** copy `UefiBenchmark.iso` anywhere on the drive — Ventoy lists it in its boot menu.
+   - **EFI:** copy `UefiBenchmark.efi` to the drive; Ventoy can chainload `.efi` files directly.
+3. Boot from the USB drive, select the file in the Ventoy menu, and the benchmark launches.
+4. Disable **Secure Boot** in firmware first (the app is unsigned).
+
+### Boot in a VM
+
+Attach the FAT32 disk image (`make qemu` output) or the ISO (`make iso`) to any UEFI-capable VM (VirtualBox, VMware, Hyper-V, QEMU) and boot from it.
+
 ## Features
 
 - **UEFI GOP graphics** — 1024×768 default; live resolution switching from the main menu; integer font scaling for 1080p
@@ -151,14 +190,7 @@ make qemu OVMF=/path/to/OVMF.fd
 
 ## Running
 
-Build output is `Build/UefiBenchmark.efi` — a PE32+ UEFI application.
-
-| Method | Command / Steps |
-|--------|----------------|
-| QEMU | `make qemu` — creates a FAT32 disk image and boots with OVMF |
-| ISO | `make iso` — bootable UEFI ISO for VMs or optical boot flows |
-| USB stick | Format FAT32, copy `.efi` to `EFI/BOOT/BOOTX64.EFI` |
-| VM | Attach the FAT32 image or ISO at boot |
+Build output is `Build/UefiBenchmark.efi` — a PE32+ UEFI application. `make iso` produces a bootable UEFI ISO. See [How to Use](#how-to-use) for QEMU, USB stick, Ventoy, and VM boot instructions.
 
 ## Screenshots
 
