@@ -82,6 +82,7 @@ static void RunAesKernel(UINT64 n, const UINT8* rkeys) {
 void AesBenchmark::RunCore(UINT32 /*workerIndex*/, UINT32 /*totalWorkers*/) {
     ClearNote();
     if (!mHasAes) { SetNote("AES-NI not supported"); return; }
+    SetIsa("AES-NI");
 
     const UINT8* rkeys = mRoundKeys;
 

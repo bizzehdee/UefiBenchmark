@@ -18,6 +18,7 @@ struct BenchmarkResult {
     UINT64          RawMetric;     // raw pre-normalization throughput (calibration)
     const char*     RawUnit;       // unit for RawMetric (e.g. "MOPS", "MB/s")
     const char*     Note;          // recoverable-failure reason (OOM, unsupported); null = ran normally
+    const char*     IsaPath;       // ISA path taken (e.g. "AVX2", "SSE2"); null = no ISA choice
     UINT32          McCorrected;   // corrected machine-check events seen during the run
     UINT32          McUncorrected; // uncorrected (but survived) machine-check events
     Vector<UINT64>  RunTimesUs;
@@ -39,7 +40,7 @@ struct BenchmarkResult {
     BenchmarkResult()
         : Name(""), Category(""), Unit(""), Score(0),
           Iterations(0), ErrorCount(0), BudgetUs(0), RawMetric(0), RawUnit(""),
-          Note(nullptr), McCorrected(0), McUncorrected(0),
+          Note(nullptr), IsaPath(nullptr), McCorrected(0), McUncorrected(0),
           TotalTimeUs(0),
           MultiCore(false), IncludeInScore(true), CategoryWeight(100), CoreCount(1),
           RunModeUsed(RunMode::SingleCore),

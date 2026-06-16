@@ -484,6 +484,7 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
     result.RawMetric      = benchmark->GetRawMetric();
     result.RawUnit        = benchmark->GetRawUnit();
     result.Note           = benchmark->GetStatusNote();
+    result.IsaPath        = benchmark->GetIsaPath();
     result.McCorrected    = MachineCheck::CorrectedCount();
     result.McUncorrected  = MachineCheck::UncorrectedCount();
     return result;
@@ -608,8 +609,14 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     result.Score = Median64(sortBuf, apCount);
     result.Unit  = benchmark->GetUnit();
     result.Note  = benchmark->GetStatusNote();
+    result.IsaPath = benchmark->GetIsaPath();
     result.McCorrected   = MachineCheck::CorrectedCount();
     result.McUncorrected = MachineCheck::UncorrectedCount();
+
+    // If no run completed, every AP dispatch failed — surface that as the skip
+    // reason instead of a bare zero score.
+    if (!result.Note && result.RunTimesUs.Empty())
+        result.Note = "AP dispatch failed";
 
     return result;
 }

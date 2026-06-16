@@ -85,6 +85,7 @@ static void RunSse2Fallback(UINT64 n) {
 void FpVectorBenchmark::RunCore(UINT32 /*workerIndex*/, UINT32 /*totalWorkers*/) {
     const auto& feat = CpuFeatures::Get();
     bool useAvx = feat.HasAVX2 && feat.HasFMA && feat.HasXSave;
+    SetIsa(useAvx ? "AVX2+FMA" : "SSE2");
 
     if (useAvx) CpuFeatures::EnableAvxState();
 

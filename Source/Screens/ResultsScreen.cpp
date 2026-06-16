@@ -96,6 +96,9 @@ void ResultsScreen::OnEnter(Tui& tui) {
                 PadAt(line, 73, "---", 11);
                 lineColor = Theme::Current().TextDim;
             }
+
+            // Which ISA path the kernel took (fallback-capable tests only).
+            if (r.IsaPath) PadAt(line, 94, r.IsaPath, 14);
         } else {
             // ── Per-core sub-row ──
             int c = dr.coreIdx;
@@ -184,6 +187,17 @@ void ResultsScreen::OnEnter(Tui& tui) {
             Ui::Concat3("  !! RAM ERRORS DETECTED: ", UintToStr(totalErrors), " mismatches !!"),
             Theme::Current().Error);
 
+    // Tests skipped (no usable result) carry a reason in their SKIP row above;
+    // summarise the count here so it's obvious at a glance.
+    UINT64 skipped = 0;
+    for (UINTN i = 0; i < results.Size(); ++i)
+        if (results[i].Note && results[i].Score == 0 && results[i].ErrorCount == 0)
+            ++skipped;
+    if (skipped > 0)
+        mVp.AddLine(
+            Ui::Concat3("  ", UintToStr(skipped), " test(s) skipped - see the SKIP rows above for the reason"),
+            Theme::Current().Warning);
+
     // Machine-check events caught by MCA polling during the run. Uncorrected
     // errors (the CPU could not fix them but survived) are serious; corrected
     // errors mean the hardware auto-recovered (ECC scrub / cache parity).
@@ -234,6 +248,7 @@ void ResultsScreen::Draw(Tui& /*tui*/, int top, int /*bottom*/) {
     Renderer::DrawText(61, hdr, Renderer::Pad("Max(us)",   12), Theme::Current().Accent);
     Renderer::DrawText(73, hdr, Renderer::Pad("Score",     11), Theme::Current().Accent);
     Renderer::DrawText(84, hdr, Renderer::Pad("Unit",       9), Theme::Current().Accent);
+    Renderer::DrawText(94, hdr, Renderer::Pad("ISA",       14), Theme::Current().Accent);
     Ui::DrawSeparator(top + 2);
 
     mVp.Render(contentStart, mViewRows);

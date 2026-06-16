@@ -38,7 +38,7 @@ void AiCacheBenchmark::Teardown() {
 
 void AiCacheBenchmark::Run() {
     ClearNote();
-    if (!mL1 || !mL2 || !mL3 || !mDram) { SetNote("Out of memory (chain alloc failed)"); return; }
+    if (!mL1 || !mL2 || !mL3 || !mDram) { SetNote("Out of memory"); return; }
 
     const UINT64 cyclesPerUs  = Timer::CyclesPerUs();
     const UINT64 budgetCycles = GetBudgetUs() * cyclesPerUs;

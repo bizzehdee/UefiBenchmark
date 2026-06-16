@@ -79,6 +79,7 @@ void AiInt8Benchmark::RunCore(UINT32 workerIndex, UINT32 /*totalWorkers*/) {
     }
 
     const bool useAvx2 = CpuFeatures::Get().HasAVX2 && CpuFeatures::Get().HasXSave;
+    SetIsa(useAvx2 ? "AVX2" : "scalar");
     if (useAvx2) CpuFeatures::EnableAvxState();
 
     constexpr UINT64 MACS_PER_GEMM = (UINT64)kN * kN * kN;

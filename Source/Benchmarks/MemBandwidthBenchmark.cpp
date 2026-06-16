@@ -10,6 +10,7 @@
 
 void MemSeqWriteBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
     ClearNote();
+    SetIsa("SSE2 NT");  // non-temporal streaming stores
     auto* buf = BigBuffer::GetShared();
     if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
@@ -49,6 +50,7 @@ void MemSeqWriteBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
 
 void MemSeqReadBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
     ClearNote();
+    SetIsa("SSE2");
     auto* buf = BigBuffer::GetShared();
     if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
@@ -79,6 +81,7 @@ void MemSeqReadBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
 
 void MemCopyBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
     ClearNote();
+    SetIsa("SSE2 NT");  // non-temporal streaming copy
     auto* buf = BigBuffer::GetShared();
     if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 

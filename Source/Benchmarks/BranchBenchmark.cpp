@@ -35,7 +35,7 @@ void BranchBenchmark::Teardown() {
 
 void BranchBenchmark::RunCore(UINT32 /*workerIndex*/, UINT32 /*totalWorkers*/) {
     ClearNote();
-    if (!mData) { SetNote("Out of memory (buffer alloc failed)"); return; }
+    if (!mData) { SetNote("Out of memory"); return; }
 
     UINT8* data = mData;
 

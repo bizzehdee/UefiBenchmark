@@ -62,6 +62,10 @@ void MemLatencyBenchmark::Run() {
         __atomic_fetch_add(const_cast<UINT64*>(&mTotalAccesses), n, __ATOMIC_RELAXED);
     }, [this](UINT64 e, UINT64) { TryReportProgress(e); });
 
-    volatile UINT64* sink = reinterpret_cast<volatile UINT64*>(ptr);
+    // Force the final pointer to be materialized so the dependent chase above
+    // is not dead-code-eliminated under -O2. Must be a volatile UINT64 *object*
+    // (a real volatile store = a side effect); a volatile-pointer-typed local
+    // would not keep the loop, leaving accesses huge and ns/access flooring to 0.
+    volatile UINT64 sink = reinterpret_cast<UINT64>(ptr);
     (void)sink;
 }

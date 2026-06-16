@@ -56,6 +56,10 @@ public:
     // "RAM buffer unavailable"). Null when the run completed normally.
     virtual const char* GetStatusNote() const { return nullptr; }
 
+    // For benchmarks with multiple instruction-set paths, the one actually taken
+    // this run (e.g. "AVX2", "SSE2", "AES-NI", "scalar"). Null = no ISA choice.
+    virtual const char* GetIsaPath() const { return nullptr; }
+
     // Return false for pass/fail tests (e.g. integrity) so they don't skew
     // the category composite score.
     virtual bool IncludeInCategoryScore() const { return true; }

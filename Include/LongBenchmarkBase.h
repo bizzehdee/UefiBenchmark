@@ -25,7 +25,15 @@ public:
     // recoverable bail-out). Read by the runner after the run completes.
     const char* GetStatusNote() const override { return mStatusNote; }
 
+    // Instruction-set path taken this run (set via SetIsa where the kernel
+    // branches on CPU features). Read by the runner after the run completes.
+    const char* GetIsaPath() const override { return mIsaPath; }
+
 protected:
+    // Record which ISA path the kernel chose (e.g. "AVX2", "SSE2"). Call it on
+    // the branch that selects the path. All workers pick the same path (feature
+    // detection is uniform), so concurrent pointer writes are harmless.
+    void SetIsa(const char* isa) { mIsaPath = isa; }
     // Record/clear the recoverable-failure reason. Call ClearNote() at the top
     // of RunCore/Run before any early-return guards, then SetNote("...") on the
     // bail path. Writing a pointer is atomic on x86, so it is safe for APs to
@@ -93,4 +101,5 @@ private:
     volatile UINT64     mLastRenderTsc = 0;
     volatile UINT64     mLastElapsedUs = 0;
     const char* volatile mStatusNote   = nullptr;
+    const char* volatile mIsaPath      = nullptr;
 };
