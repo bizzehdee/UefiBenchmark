@@ -78,7 +78,8 @@ static void RunFnvKernel(UINT64 n, const UINT8* data) {
 // ── RunCore ───────────────────────────────────────────────────
 
 void HashBenchmark::RunCore(UINT32 /*workerIndex*/, UINT32 /*totalWorkers*/) {
-    if (!mData) return;
+    ClearNote();
+    if (!mData) { SetNote("Out of memory (buffer alloc failed)"); return; }
 
     bool hasSse42 = CpuFeatures::Get().HasSSE42;
     const UINT8* data = mData;

@@ -40,6 +40,7 @@
   Source/Screens/CorePickerScreen.cpp
   Source/CpuFeatures.cpp
   Source/BigBuffer.cpp
+  Source/MachineCheck.cpp
   Source/VideoEngine.cpp
   Source/Benchmarks/IntThroughputBenchmark.cpp
   Source/Benchmarks/IntLatencyBenchmark.cpp

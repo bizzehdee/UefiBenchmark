@@ -11,8 +11,9 @@ static const UINT8 kPatterns[] = { 0x00, 0xFF, 0xAA, 0x55 };
 static constexpr int N_PATTERNS = 4;
 
 void MemIntegrityBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     UINT64 start, end;
     buf->GetWorkerRange(workerIndex, totalWorkers, &start, &end);

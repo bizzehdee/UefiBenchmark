@@ -51,6 +51,11 @@ public:
     // pattern is currently being verified). Null = nothing extra to show.
     virtual const char* GetStatus() const { return nullptr; }
 
+    // Human-readable reason the benchmark produced no usable result after a
+    // recoverable failure (e.g. "AES-NI not supported", "Out of memory",
+    // "RAM buffer unavailable"). Null when the run completed normally.
+    virtual const char* GetStatusNote() const { return nullptr; }
+
     // Return false for pass/fail tests (e.g. integrity) so they don't skew
     // the category composite score.
     virtual bool IncludeInCategoryScore() const { return true; }

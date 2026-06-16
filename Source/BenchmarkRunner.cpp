@@ -9,6 +9,7 @@
 #include "SystemInfo.h"
 #include "Freestanding.h"
 #include "BenchmarkConstants.h"
+#include "MachineCheck.h"
 #include "Screens/UiHelpers.h"
 
 // ── AP dispatch contexts ─────────────────────────────────────
@@ -293,6 +294,9 @@ static UINT64 BspRenderWhileRunning(IBenchmark* bm, ProgressCtx* pc, EFI_EVENT d
     rep.BudgetUs = bm->GetBudgetUs();
     rep.Unit     = bm->GetUnit();
     while (!EventSignaled(doneEvt)) {
+        // BSP machine-check poll: covers the BSP's own core banks plus the
+        // shared package banks (memory controller / LLC) while the APs run.
+        MachineCheck::PollLocal();
         rep.ElapsedUs = Timer::ElapsedUs();
         rep.Score     = bm->GetScore();
         rep.Status    = bm->GetStatus();
@@ -361,6 +365,7 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
     }
 
     benchmark->Setup();
+    MachineCheck::BeginRun();   // re-baseline MCA banks for this benchmark
 
     for (UINTN r = 0; r < runs; ++r) {
         benchmark->PreRun();
@@ -478,6 +483,9 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
     result.BudgetUs       = benchmark->GetBudgetUs();
     result.RawMetric      = benchmark->GetRawMetric();
     result.RawUnit        = benchmark->GetRawUnit();
+    result.Note           = benchmark->GetStatusNote();
+    result.McCorrected    = MachineCheck::CorrectedCount();
+    result.McUncorrected  = MachineCheck::UncorrectedCount();
     return result;
 }
 
@@ -541,6 +549,7 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     benchmark->SetProgressCallback(nullptr, nullptr);
 
     benchmark->Setup();
+    MachineCheck::BeginRun();   // re-baseline MCA banks for this benchmark
 
     ApSingleContext apCtx;
     apCtx.Benchmark = benchmark;
@@ -598,6 +607,9 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     for (UINT32 i = 0; i < apCount; ++i) sortBuf[i] = perCoreAvg[i];
     result.Score = Median64(sortBuf, apCount);
     result.Unit  = benchmark->GetUnit();
+    result.Note  = benchmark->GetStatusNote();
+    result.McCorrected   = MachineCheck::CorrectedCount();
+    result.McUncorrected = MachineCheck::UncorrectedCount();
 
     return result;
 }

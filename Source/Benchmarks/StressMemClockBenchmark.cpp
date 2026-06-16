@@ -7,8 +7,9 @@
 #include "Timer.h"
 
 void StressMemClockBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     UINT64 start, end;
     buf->GetWorkerRange(workerIndex, totalWorkers, &start, &end);

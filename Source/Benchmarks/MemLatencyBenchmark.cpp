@@ -44,7 +44,8 @@ void MemLatencyBenchmark::Teardown() {
 }
 
 void MemLatencyBenchmark::Run() {
-    if (!mStartPtr || mSlotCount == 0) return;
+    ClearNote();
+    if (!mStartPtr || mSlotCount == 0) { SetNote("RAM buffer unavailable"); return; }
 
     UINT64* ptr = mStartPtr;
     UINT64  N   = mSlotCount;

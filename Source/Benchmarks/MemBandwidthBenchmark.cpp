@@ -9,8 +9,9 @@
 // ── SeqWrite (non-temporal stores) ───────────────────────────
 
 void MemSeqWriteBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     UINT64 start, end;
     buf->GetWorkerRange(workerIndex, totalWorkers, &start, &end);
@@ -47,8 +48,9 @@ void MemSeqWriteBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
 // ── SeqRead ───────────────────────────────────────────────────
 
 void MemSeqReadBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     UINT64 start, end;
     buf->GetWorkerRange(workerIndex, totalWorkers, &start, &end);
@@ -76,14 +78,15 @@ void MemSeqReadBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
 // Uses the first half of the worker's range as source and second half as dest.
 
 void MemCopyBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     UINT64 start, end;
     buf->GetWorkerRange(workerIndex, totalWorkers, &start, &end);
 
     UINT64 halfSize = ((end - start) / 2) & ~static_cast<UINT64>(15);
-    if (halfSize < 16) return;
+    if (halfSize < 16) { SetNote("RAM buffer too small"); return; }
 
     constexpr UINT32 MAX_SPANS = 32;
     BigSegment srcSpans[MAX_SPANS], dstSpans[MAX_SPANS];

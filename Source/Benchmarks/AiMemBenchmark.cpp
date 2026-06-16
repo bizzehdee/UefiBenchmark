@@ -6,8 +6,9 @@
 #include "TimeBox.h"
 
 void AiMemBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     // GetWorkerRange returns byte OFFSETS into the buffer; the buffer is a set of
     // discontiguous segments, so map the range to real (base,size) spans before
@@ -15,12 +16,12 @@ void AiMemBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
     // unmapped memory / MMIO and faults mid-run.)
     UINT64 start, end;
     buf->GetWorkerRange(workerIndex, totalWorkers, &start, &end);
-    if (end <= start) return;
+    if (end <= start) { SetNote("RAM buffer unavailable"); return; }
 
     constexpr UINT32 MAX_SPANS = 32;
     BigSegment spans[MAX_SPANS];
     UINT32 nSpans = buf->GetSpans(start, end, spans, MAX_SPANS);
-    if (nSpans == 0) return;
+    if (nSpans == 0) { SetNote("RAM buffer unavailable"); return; }
 
     // Bytes covered by one full pass (8-wide unroll floors each span to 8 slots).
     UINT64 passBytes = 0;
@@ -28,7 +29,7 @@ void AiMemBenchmark::RunCore(UINT32 workerIndex, UINT32 totalWorkers) {
         UINT64 cnt = spans[s].Size / sizeof(UINT64);
         passBytes += (cnt & ~(UINT64)7) * sizeof(UINT64);
     }
-    if (passBytes == 0) return;
+    if (passBytes == 0) { SetNote("RAM buffer too small"); return; }
 
     // Read through every span repeatedly; 8 accumulators hide load latency.
     const UINT64 cyclesPerUs  = Timer::CyclesPerUs();

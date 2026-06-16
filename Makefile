@@ -130,6 +130,7 @@ SOURCES  = \
 	$(SCNDIR)/CorePickerScreen.cpp \
 	$(SRCDIR)/CpuFeatures.cpp \
 	$(SRCDIR)/BigBuffer.cpp \
+	$(SRCDIR)/MachineCheck.cpp \
 	$(SRCDIR)/VideoEngine.cpp \
 	$(BMDIR)/IntThroughputBenchmark.cpp \
 	$(BMDIR)/IntLatencyBenchmark.cpp \

@@ -85,6 +85,13 @@ void ResultsScreen::OnEnter(Tui& tui) {
                 PadAt(line, 73, UintToStr(r.Score), 11);
                 PadAt(line, 84, r.Unit,              9);
                 lineColor = Theme::Current().Success;
+            } else if (r.Note) {
+                // Recoverable failure (OOM, unsupported feature, no RAM buffer):
+                // report the reason instead of a bare "---" so it isn't mistaken
+                // for a legitimate zero score.
+                PadAt(line, 73, "SKIP", 5);
+                PadAt(line, 78, r.Note, ScrollViewport::MAX_WIDTH - 1 - 78);
+                lineColor = Theme::Current().Warning;
             } else {
                 PadAt(line, 73, "---", 11);
                 lineColor = Theme::Current().TextDim;
@@ -176,6 +183,24 @@ void ResultsScreen::OnEnter(Tui& tui) {
         mVp.AddLine(
             Ui::Concat3("  !! RAM ERRORS DETECTED: ", UintToStr(totalErrors), " mismatches !!"),
             Theme::Current().Error);
+
+    // Machine-check events caught by MCA polling during the run. Uncorrected
+    // errors (the CPU could not fix them but survived) are serious; corrected
+    // errors mean the hardware auto-recovered (ECC scrub / cache parity).
+    UINT32 mcCorr = 0, mcUnc = 0;
+    for (UINTN i = 0; i < results.Size(); ++i) {
+        mcUnc  += results[i].McUncorrected;
+        mcCorr += results[i].McCorrected;
+    }
+    if (mcUnc > 0)
+        mVp.AddLine(
+            Ui::Concat3("  !! UNCORRECTED MACHINE CHECKS: ", UintToStr(mcUnc), " events !!"),
+            Theme::Current().Error);
+    if (mcCorr > 0)
+        mVp.AddLine(
+            Ui::Concat3("  Corrected machine-check events: ", UintToStr(mcCorr),
+                        " (hardware auto-recovered)"),
+            Theme::Current().Warning);
 
     if (Timer::IsCalibrated()) {
         mVp.AddLine(

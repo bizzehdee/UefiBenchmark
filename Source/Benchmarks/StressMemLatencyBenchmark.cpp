@@ -7,8 +7,9 @@
 #include "Timer.h"
 
 void StressMemLatencyBenchmark::RunCore(UINT32 /*workerIndex*/, UINT32 /*totalWorkers*/) {
+    ClearNote();
     auto* buf = BigBuffer::GetShared();
-    if (!buf || buf->TotalSize() == 0) return;
+    if (!buf || buf->TotalSize() == 0) { SetNote("RAM buffer unavailable"); return; }
 
     // Single-core: use the entire buffer
     constexpr UINT32 MAX_SPANS = 64;

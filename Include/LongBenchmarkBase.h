@@ -7,6 +7,7 @@
 #include "IBenchmark.h"
 #include "Timer.h"
 #include "BenchmarkConstants.h"
+#include "MachineCheck.h"
 
 class LongBenchmarkBase : public IBenchmark {
 public:
@@ -20,7 +21,18 @@ public:
     // Must be implemented by each subclass to expose its budget duration.
     virtual UINT64 GetBudgetUs() const override = 0;
 
+    // Reason this benchmark produced no usable result (set via SetNote on a
+    // recoverable bail-out). Read by the runner after the run completes.
+    const char* GetStatusNote() const override { return mStatusNote; }
+
 protected:
+    // Record/clear the recoverable-failure reason. Call ClearNote() at the top
+    // of RunCore/Run before any early-return guards, then SetNote("...") on the
+    // bail path. Writing a pointer is atomic on x86, so it is safe for APs to
+    // set the same string concurrently. The runner reads it on the BSP after
+    // the dispatch completes (the completion event provides the barrier).
+    void SetNote(const char* note) { mStatusNote = note; }
+    void ClearNote()               { mStatusNote = nullptr; }
     // Divisor for live throughput scores: the elapsed time so far while running,
     // falling back to the full budget before the first progress tick (and after
     // the run, where it holds the final elapsed). Lets GetScore() report a true
@@ -37,6 +49,12 @@ protected:
         // when no callback is set (BSP-driven rendering: APs only publish here,
         // they never render) or a render is skipped below (trylock/rate-limit).
         mLastElapsedUs = elapsedUs;
+
+        // Per-CPU machine-check poll. Runs on whichever processor is executing
+        // the kernel (every AP in a multi-core run, since they reach here each
+        // chunk with mProgressFn == null). Self-throttled to ~100 ms per CPU, so
+        // the MSR access does not perturb the measured throughput.
+        MachineCheck::PollLocal();
 
         if (!mProgressFn) return;
 
@@ -69,9 +87,10 @@ protected:
     }
 
 private:
-    ProgressFn       mProgressFn    = nullptr;
-    void*            mProgressCtx   = nullptr;
-    volatile UINT32  mRenderLock    = 0;
-    volatile UINT64  mLastRenderTsc = 0;
-    volatile UINT64  mLastElapsedUs = 0;
+    ProgressFn          mProgressFn    = nullptr;
+    void*               mProgressCtx   = nullptr;
+    volatile UINT32     mRenderLock    = 0;
+    volatile UINT64     mLastRenderTsc = 0;
+    volatile UINT64     mLastElapsedUs = 0;
+    const char* volatile mStatusNote   = nullptr;
 };
