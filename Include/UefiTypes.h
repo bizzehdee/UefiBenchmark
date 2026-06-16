@@ -28,8 +28,16 @@ typedef signed char         INT8;
 typedef signed short        INT16;
 typedef signed int          INT32;
 typedef signed long long    INT64;
+// On a Linux host build UINTN must match size_t (unsigned long) so that
+// operator new and mem* declarations satisfy the compiler's built-in checks.
+// Both are 64-bit on x86-64, so there is no ABI difference.
+#ifdef UEFI_HOST_TEST
+typedef unsigned long       UINTN;
+typedef long                INTN;
+#else
 typedef UINT64              UINTN;
 typedef INT64               INTN;
+#endif
 typedef UINT8               BOOLEAN;
 typedef unsigned short      CHAR16;
 typedef char                CHAR8;

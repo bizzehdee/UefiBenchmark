@@ -92,6 +92,14 @@ void SelectPhysicalCoresOnly() {
 void SetIncludeBsp(bool include) { sIncludeBsp = include; }
 bool GetIncludeBsp()             { return sIncludeBsp; }
 
+#ifdef UEFI_HOST_TEST
+void InjectRoster(const ApInfo* aps, UINT32 count) {
+    sCount = count < MAX_APS ? count : MAX_APS;
+    for (UINT32 i = 0; i < sCount; ++i) sAps[i] = aps[i];
+    sIncludeBsp = false;
+}
+#endif
+
 void SelectOnePerPackage() {
     for (UINT32 i = 0; i < sCount; ++i) {
         if (!sAps[i].Available) { sAps[i].Selected = false; continue; }

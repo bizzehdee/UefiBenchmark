@@ -21,4 +21,6 @@ UINT32 GetStressMinutes()        { return sStressMinutes ? sStressMinutes : kStr
 void   SetStressMinutes(UINT32 m){ sStressMinutes = Clamp(m); }
 UINT64 GetStressBudgetUs()       { return (UINT64)GetStressMinutes() * 60ULL * US_PER_SECOND; }
 
+void   Reset()                   { sTestMinutes = 0; sStressMinutes = 0; }
+
 }  // namespace RunConfig

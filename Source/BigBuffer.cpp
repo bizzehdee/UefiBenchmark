@@ -95,6 +95,18 @@ void BigBuffer::GetWorkerRange(UINT32 workerIndex, UINT32 totalWorkers,
                     : *outStart + perWorker;
 }
 
+#ifdef UEFI_HOST_TEST
+void BigBuffer::InjectSegments(const BigSegment* segs, UINT32 count) {
+    mCount = count < MAX_SEGMENTS ? count : MAX_SEGMENTS;
+    mPfx[0] = 0;
+    for (UINT32 i = 0; i < mCount; ++i) {
+        mSegs[i] = segs[i];
+        mPfx[i + 1] = mPfx[i] + segs[i].Size;
+    }
+    mTotalSize = mPfx[mCount];
+}
+#endif
+
 UINT32 BigBuffer::GetSpans(UINT64 byteStart, UINT64 byteEnd,
                             BigSegment* spans, UINT32 maxSpans) const {
     UINT32 n = 0;

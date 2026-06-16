@@ -43,4 +43,10 @@ void SelectOnePerPackage();      // first AP per socket
 void  SetIncludeBsp(bool include);
 bool  GetIncludeBsp();
 
+#ifdef UEFI_HOST_TEST
+// Replace the roster with a synthetic list for unit-test use (bypasses Init()).
+// Also resets IncludeBsp to false.
+void InjectRoster(const ApInfo* aps, UINT32 count);
+#endif
+
 } // namespace CoreSelection

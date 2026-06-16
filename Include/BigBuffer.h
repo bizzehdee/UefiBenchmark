@@ -48,6 +48,12 @@ public:
     static void AddRef();
     static void Release();
 
+#ifdef UEFI_HOST_TEST
+    // Inject a synthetic segment list for unit-test use (no firmware allocation).
+    // Builds the prefix-sum array and sets TotalSize() from the injected segments.
+    void InjectSegments(const BigSegment* segs, UINT32 count);
+#endif
+
 private:
     BigSegment mSegs[MAX_SEGMENTS];
     UINT64     mPfx[MAX_SEGMENTS + 1]; // segment prefix-sum byte offsets

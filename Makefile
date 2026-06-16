@@ -255,9 +255,13 @@ ISO_TOOL := $(shell if command -v xorriso >/dev/null 2>&1; then echo xorriso; \
                    elif command -v mkisofs >/dev/null 2>&1; then echo mkisofs; fi)
 
 # ── Rules ─────────────────────────────────────────────────────
-.PHONY: all clean disk iso qemu qemusingle install help check-toolchain check-iso-tools check-sign-tools sign keys decode-keys enroll enroll-info enroll-status
+.PHONY: all clean disk iso qemu qemusingle install help check-toolchain check-iso-tools check-sign-tools sign keys decode-keys enroll enroll-info enroll-status test
 
 all: check-toolchain $(SIGN_PRECHECK) $(TARGET) $(SIGN_DEP)
+
+# Run the host unit-test suite (no UEFI toolchain needed).
+test:
+	$(MAKE) -C tests
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

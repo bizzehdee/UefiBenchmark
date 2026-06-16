@@ -27,4 +27,8 @@ UINT32 GetStressMinutes();
 void   SetStressMinutes(UINT32 minutes);
 UINT64 GetStressBudgetUs();
 
+// Reset both budgets to their default "unset" state (returns defaults on next Get call).
+// Primarily for unit-test isolation.
+void Reset();
+
 }  // namespace RunConfig
