@@ -60,6 +60,10 @@ public:
     // this run (e.g. "AVX2", "SSE2", "AES-NI", "scalar"). Null = no ISA choice.
     virtual const char* GetIsaPath() const { return nullptr; }
 
+    // For working-set sweep benchmarks (e.g. L3 Cache Cliff): fill sizesMB[] and
+    // values[] with up to maxN per-size points; returns the number written.
+    virtual UINT32 GetSweep(UINT32* /*sizesMB*/, UINT64* /*values*/, UINT32 /*maxN*/) const { return 0; }
+
     // Return false for pass/fail tests (e.g. integrity) so they don't skew
     // the category composite score.
     virtual bool IncludeInCategoryScore() const { return true; }

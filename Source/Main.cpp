@@ -25,6 +25,7 @@
 #include "Benchmarks/MemBandwidthBenchmark.h"
 #include "Benchmarks/MemLatencyBenchmark.h"
 #include "Benchmarks/MemIntegrityBenchmark.h"
+#include "Benchmarks/L3CacheCliffBenchmark.h"
 
 // AI readiness benchmarks
 #include "Benchmarks/AiInt8Benchmark.h"
@@ -183,6 +184,7 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     MemCopyBenchmark        memCopy;
     MemLatencyBenchmark     memLatency;
     MemIntegrityBenchmark   memIntegrity;
+    L3CacheCliffBenchmark   l3Cliff;
 
     // AI readiness benchmarks
     AiInt8Benchmark         aiInt8;
@@ -212,6 +214,7 @@ extern "C" EFI_STATUS EFIAPI EfiMain(
     BenchmarkRegistry::Register(&memCopy);
     BenchmarkRegistry::Register(&memLatency);
     BenchmarkRegistry::Register(&memIntegrity);
+    BenchmarkRegistry::Register(&l3Cliff);
 
     // Register AI benchmarks
     BenchmarkRegistry::Register(&aiInt8);

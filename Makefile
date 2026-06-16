@@ -200,6 +200,7 @@ SOURCES  = \
 	$(BMDIR)/MemBandwidthBenchmark.cpp \
 	$(BMDIR)/MemLatencyBenchmark.cpp \
 	$(BMDIR)/MemIntegrityBenchmark.cpp \
+	$(BMDIR)/L3CacheCliffBenchmark.cpp \
 	$(BMDIR)/AiInt8Benchmark.cpp \
 	$(BMDIR)/AiInt4Benchmark.cpp \
 	$(BMDIR)/AiMemBenchmark.cpp \

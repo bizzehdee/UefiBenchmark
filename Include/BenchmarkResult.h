@@ -6,6 +6,7 @@
 #include "IBenchmark.h"
 
 constexpr UINT32 MAX_CYCLE_CORES = 64;
+constexpr UINT32 MAX_SWEEP_POINTS = 16;
 
 struct BenchmarkResult {
     const char*     Name;
@@ -29,6 +30,11 @@ struct BenchmarkResult {
     UINT32          CoreCount;
     RunMode         RunModeUsed;
 
+    // Working-set sweep (e.g. L3 Cache Cliff): per-size measurement table.
+    UINT32  SweepCount;
+    UINT32  SweepSizeMB[MAX_SWEEP_POINTS];
+    UINT64  SweepValue [MAX_SWEEP_POINTS];   // value at each size (e.g. ns/access)
+
     // Populated only when RunModeUsed == RunMode::CoreCycle
     UINT32  PerCoreSampleCount;
     UINT64  PerCoreScore[MAX_CYCLE_CORES];   // avg score per core (0 if benchmark has no score)
@@ -44,8 +50,13 @@ struct BenchmarkResult {
           TotalTimeUs(0),
           MultiCore(false), IncludeInScore(true), CategoryWeight(100), CoreCount(1),
           RunModeUsed(RunMode::SingleCore),
+          SweepCount(0),
           PerCoreSampleCount(0)
     {
+        for (UINT32 i = 0; i < MAX_SWEEP_POINTS; ++i) {
+            SweepSizeMB[i] = 0;
+            SweepValue[i]  = 0;
+        }
         for (UINT32 i = 0; i < MAX_CYCLE_CORES; ++i) {
             PerCoreScore[i]   = 0;
             PerCoreMin[i]     = 0;

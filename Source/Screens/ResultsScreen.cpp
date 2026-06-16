@@ -12,8 +12,9 @@
 // Flat display list: each entry is (resultIdx, coreIdx). coreIdx == -1 → summary
 // row; coreIdx >= 0 → per-core sub-row. File-scope POD array (no init guard).
 namespace {
-struct DisplayRow { int resIdx; int coreIdx; };
-DisplayRow sFlat[32 + 32 * MAX_CYCLE_CORES];
+// coreIdx >= 0 -> per-core sub-row; sweepIdx >= 0 -> sweep sub-row; both -1 -> summary.
+struct DisplayRow { int resIdx; int coreIdx; int sweepIdx; };
+DisplayRow sFlat[32 + 32 * MAX_CYCLE_CORES + 32 * (int)MAX_SWEEP_POINTS];
 
 // Write text into a fixed-width field within a line buffer.
 void PadAt(char* buf, int col, const char* text, int w) {
@@ -29,14 +30,17 @@ void ResultsScreen::OnEnter(Tui& tui) {
     mVp.Clear();
     if (mEmpty) return;
 
+    const int kFlatCap = 32 + 32 * (int)MAX_CYCLE_CORES + 32 * (int)MAX_SWEEP_POINTS;
     int flatCount = 0;
     for (int ri = 0; ri < static_cast<int>(results.Size()); ++ri) {
-        sFlat[flatCount++] = { ri, -1 };
+        sFlat[flatCount++] = { ri, -1, -1 };
         auto& r = results[static_cast<UINTN>(ri)];
         if (r.RunModeUsed == RunMode::CoreCycle) {
-            for (UINT32 c = 0; c < r.PerCoreSampleCount && flatCount < 32 + 32 * (int)MAX_CYCLE_CORES; ++c)
-                sFlat[flatCount++] = { ri, static_cast<int>(c) };
+            for (UINT32 c = 0; c < r.PerCoreSampleCount && flatCount < kFlatCap; ++c)
+                sFlat[flatCount++] = { ri, static_cast<int>(c), -1 };
         }
+        for (UINT32 s = 0; s < r.SweepCount && flatCount < kFlatCap; ++s)
+            sFlat[flatCount++] = { ri, -1, static_cast<int>(s) };
     }
 
     for (int i = 0; i < flatCount; ++i) {
@@ -49,7 +53,22 @@ void ResultsScreen::OnEnter(Tui& tui) {
 
         Color lineColor = Theme::Current().Text;
 
-        if (dr.coreIdx < 0) {
+        if (dr.sweepIdx >= 0) {
+            // ── Working-set sweep sub-row (e.g. L3 Cache Cliff) ──
+            UINT32 s = static_cast<UINT32>(dr.sweepIdx);
+            char lbl[24];
+            int p = 0;
+            lbl[p++] = ' '; lbl[p++] = ' '; lbl[p++] = '+'; lbl[p++] = '-'; lbl[p++] = ' ';
+            const char* mb = UintToStr(r.SweepSizeMB[s]);
+            for (int j = 0; mb[j] && p < 18; ++j) lbl[p++] = mb[j];
+            lbl[p++] = ' '; lbl[p++] = 'M'; lbl[p++] = 'B'; lbl[p] = '\0';
+            PadAt(line,  2, lbl, 22);
+            PadAt(line, 73, UintToStr(r.SweepValue[s]), 11);
+            PadAt(line, 84, "ns/acc", 9);
+            // Highlight the 64 MB working set — the 5800X-vs-5800X3D discriminator.
+            lineColor = (r.SweepSizeMB[s] == 64)
+                            ? Theme::Current().Accent : Theme::Current().TextDim;
+        } else if (dr.coreIdx < 0) {
             // ── Summary row ──
             PadAt(line,  2, r.Name,     22);
             PadAt(line, 24, r.Category,  6);

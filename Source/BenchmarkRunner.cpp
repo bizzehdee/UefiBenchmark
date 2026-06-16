@@ -485,6 +485,7 @@ BenchmarkResult BenchmarkRunner::RunSingle(IBenchmark* benchmark, UINTN runs,
     result.RawUnit        = benchmark->GetRawUnit();
     result.Note           = benchmark->GetStatusNote();
     result.IsaPath        = benchmark->GetIsaPath();
+    result.SweepCount     = benchmark->GetSweep(result.SweepSizeMB, result.SweepValue, MAX_SWEEP_POINTS);
     result.McCorrected    = MachineCheck::CorrectedCount();
     result.McUncorrected  = MachineCheck::UncorrectedCount();
     return result;
@@ -610,6 +611,7 @@ BenchmarkResult BenchmarkRunner::RunCoreCycle(IBenchmark* benchmark, UINTN runs,
     result.Unit  = benchmark->GetUnit();
     result.Note  = benchmark->GetStatusNote();
     result.IsaPath = benchmark->GetIsaPath();
+    result.SweepCount = benchmark->GetSweep(result.SweepSizeMB, result.SweepValue, MAX_SWEEP_POINTS);
     result.McCorrected   = MachineCheck::CorrectedCount();
     result.McUncorrected = MachineCheck::UncorrectedCount();
 
